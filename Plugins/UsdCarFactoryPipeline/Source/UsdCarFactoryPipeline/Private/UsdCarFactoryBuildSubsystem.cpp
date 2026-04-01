@@ -37,13 +37,9 @@ UUsdCarFactoryBuildSubsystem* UUsdCarFactoryBuildSubsystem::Get()
 		return FallbackSubsystem.Get();
 	};
 
-	if (FallbackSubsystem.IsValid())
+	if (UUsdCarFactoryBuildSubsystem* ExistingFallbackSubsystem = FallbackSubsystem.Get())
 	{
-		UUsdCarFactoryBuildSubsystem* ExistingFallbackSubsystem = FallbackSubsystem.Get();
-		if (
-			ExistingFallbackSubsystem
-			&& (ExistingFallbackSubsystem->HasGlobalParseWork() || ExistingFallbackSubsystem->JobStates.Num() > 0)
-		)
+		if (ExistingFallbackSubsystem->HasGlobalParseWork() || ExistingFallbackSubsystem->JobStates.Num() > 0)
 		{
 			return ExistingFallbackSubsystem;
 		}
