@@ -47,10 +47,14 @@
 		},
 		{
 			"Name": "McpAutomationBridge",
-			"Enabled": true,
+			"Enabled": false,
 			"TargetAllowList": [
 				"Editor"
 			]
+		},
+		{
+			"Name": "UmgMcp",
+			"Enabled": false
 		}
 	]
 }

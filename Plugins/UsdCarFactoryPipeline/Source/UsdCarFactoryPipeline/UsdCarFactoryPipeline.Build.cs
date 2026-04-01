@@ -27,6 +27,7 @@ public class UsdCarFactoryPipeline : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"UnrealUSDWrapper",
 			}
 		);
 
@@ -40,7 +41,6 @@ public class UsdCarFactoryPipeline : ModuleRules
 				"USDStage",
 				"USDStageImporter",
 				"USDClasses",
-				"UnrealUSDWrapper",
 				"USDUtilities",
 			}
 		);

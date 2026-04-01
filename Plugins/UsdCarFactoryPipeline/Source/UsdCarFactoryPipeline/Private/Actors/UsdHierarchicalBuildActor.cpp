@@ -6,7 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Data/CarGeneratedAssemblyDataAsset.h"
-#include "Data/CarUsdVariantDataAsset.h"
+#include "Editor.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
@@ -18,6 +18,7 @@
 #include "Misc/ScopeLock.h"
 #include "Misc/SecureHash.h"
 #include "TimerManager.h"
+#include "UObject/Package.h"
 #include "UObject/UnrealType.h"
 #include "USDAssetCache3.h"
 #include "USDAssetUserData.h"
@@ -28,6 +29,8 @@
 #include "USDGeomMeshConversion.h"
 #include "UnrealUSDWrapper.h"
 #include "USDObjectUtils.h"
+#include "UsdCarFactoryCoordinatorSubsystem.h"
+#include "UsdCarFactoryDataAssetSubsystem.h"
 
 #if USE_USD_SDK
 #include "USDIncludesStart.h"
@@ -47,12 +50,16 @@ namespace UsdCarFactoryPipelineBuild
 {
 	static const TCHAR* GeneratedAssetFolder = TEXT("/Game/CarRenderFactory/Generated");
 	static const TCHAR* GeneratedAssetBaseName = TEXT("DA_UsdGeneratedAssembly");
-	static const TCHAR* VariantAssetFolder = TEXT("/Game/CarRenderFactory/Generated");
-	static const TCHAR* VariantAssetBaseName = TEXT("DA_UsdVariantData");
+	static const TCHAR* AssetCacheBaseName = TEXT("DA_UsdAssetCache");
 	static const TCHAR* PrimTagPrefix = TEXT("UsdCarFactoryPipeline.Prim.");
 	static const TCHAR* ExactPrimTagPrefix = TEXT("UsdCarFactoryPipeline.PrimPath.");
 	static constexpr int32 SelectiveImportBatchSize = 32;
 	static constexpr int32 SelectiveImportMaxPrimPaths = 512;
+#if USE_USD_SDK
+	// Unreal USD resolver access has proven unstable under concurrent background stage opens.
+	// Keep delta-scan stage open/traversal serialized while still running off the game thread.
+	static FCriticalSection SourceDeltaScanMutex;
+#endif
 
 	static USceneComponent* EnsureSceneRoot(AActor* Actor)
 	{
@@ -82,6 +89,50 @@ namespace UsdCarFactoryPipelineBuild
 	static FString GetObjectPath(const UObject* Object)
 	{
 		return IsValid(Object) ? Object->GetPathName() : FString();
+	}
+
+	static void RewritePublishedAssetsIntoCache(UUsdAssetCache3* AssetCache, const TArray<UObject*>& ImportedAssets)
+	{
+		if (!AssetCache || AssetCache->GetOutermost() == GetTransientPackage())
+		{
+			return;
+		}
+
+		const FString TransientPackagePath = GetTransientPackage()->GetPathName();
+		bool bCacheMutated = false;
+
+		for (UObject* ImportedAsset : ImportedAssets)
+		{
+			if (!IsValid(ImportedAsset) || ImportedAsset->GetOutermost() == GetTransientPackage())
+			{
+				continue;
+			}
+
+			UUsdAssetUserData* AssetUserData = UsdUnreal::ObjectUtils::GetAssetUserData<UUsdAssetUserData>(ImportedAsset);
+			if (!AssetUserData || AssetUserData->OriginalHash.IsEmpty())
+			{
+				continue;
+			}
+
+			const FString& Hash = AssetUserData->OriginalHash;
+			const FSoftObjectPath ExistingPath = AssetCache->GetCachedAssetPath(Hash);
+			if (ExistingPath.IsValid() && ExistingPath.ToString().StartsWith(TransientPackagePath))
+			{
+				AssetCache->StopTrackingAsset(Hash);
+			}
+
+			AssetCache->CacheAsset(Hash, FSoftObjectPath(ImportedAsset));
+			bCacheMutated = true;
+		}
+
+		if (bCacheMutated)
+		{
+			AssetCache->MarkPackageDirty();
+			if (UPackage* Package = AssetCache->GetOutermost())
+			{
+				Package->MarkPackageDirty();
+			}
+		}
 	}
 
 	static FString MakeSafePackageSegment(const FString& InName)
@@ -131,6 +182,16 @@ namespace UsdCarFactoryPipelineBuild
 
 		const uint32 PathHash = FCrc::StrCrc32(*NormalizedPath);
 		return FString::Printf(TEXT("%s_%08X"), *SafeName, PathHash);
+	}
+
+	static bool IsTransformPrimType(const FString& PrimTypeName)
+	{
+		return PrimTypeName.Equals(TEXT("Xform"), ESearchCase::IgnoreCase);
+	}
+
+	static bool IsSupportedProxyPrimType(const FString& PrimTypeName, bool bIsStaticMesh)
+	{
+		return bIsStaticMesh || IsTransformPrimType(PrimTypeName);
 	}
 
 	template <typename MethodType>
@@ -250,19 +311,23 @@ namespace UsdCarFactoryPipelineBuild
 AUsdHierarchicalBuildActor::AUsdHierarchicalBuildActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
-	EnsureDefaultTypeNameActorClassMap();
+	EnsureDefaultProxyActorClasses();
 }
 
 void AUsdHierarchicalBuildActor::PostLoad()
 {
 	Super::PostLoad();
-	EnsureDefaultTypeNameActorClassMap();
-	BindVariantDataAssetEvents();
+	EnsureDefaultProxyActorClasses();
+	MigrateLegacyTypeNameActorClassMap();
 }
 
 void AUsdHierarchicalBuildActor::BeginDestroy()
 {
-	UnbindVariantDataAssetEvents();
+	if (UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem())
+	{
+		BuildSubsystem->RemoveJobState(*this);
+	}
+
 	Super::BeginDestroy();
 }
 
@@ -289,60 +354,70 @@ void AUsdHierarchicalBuildActor::PostEditChangeProperty(FPropertyChangedEvent& P
 
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, GeneratedDataAsset))
 	{
-		UsdAssetCacheReference = GeneratedDataAsset ? GeneratedDataAsset->UsdAssetCache : nullptr;
-	}
-
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, UsdAssetCacheReference))
-	{
-		if (GeneratedDataAsset && GeneratedDataAsset->UsdAssetCache != UsdAssetCacheReference)
-		{
-			GeneratedDataAsset->Modify();
-			GeneratedDataAsset->UsdAssetCache = UsdAssetCacheReference;
-			GeneratedDataAsset->MarkPackageDirty();
-		}
-	}
-
-	if (
-		PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, MaxConcurrentParseTasks)
-		|| PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, ParseResultFrameBudgetMs)
-		|| PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, MaxParseResultsPerTick)
-	)
-	{
-		MaxConcurrentParseTasks = FMath::Clamp(MaxConcurrentParseTasks, 2, 4);
-		ParseResultFrameBudgetMs = FMath::Clamp(ParseResultFrameBudgetMs, 2.0f, 5.0f);
-		MaxParseResultsPerTick = FMath::Max(1, MaxParseResultsPerTick);
-		ConfigureGlobalParseScheduler(MaxConcurrentParseTasks);
-	}
-
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, VariantDataAsset))
-	{
-		BindVariantDataAssetEvents();
-		if (VariantDataAsset)
-		{
-			ActiveVariantName = VariantDataAsset->ActiveVariantName;
-		}
 		return;
 	}
 
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, ActiveVariantName))
+	if (
+		PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, ParseResultFrameBudgetMs)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(AUsdHierarchicalBuildActor, MaxParseResultsPerTick)
+	)
 	{
-		if (VariantDataAsset && VariantDataAsset->ActiveVariantName != ActiveVariantName)
-		{
-			VariantDataAsset->Modify();
-			VariantDataAsset->ActiveVariantName = ActiveVariantName;
-			VariantDataAsset->MarkPackageDirty();
-			VariantDataAsset->OnActiveVariantChanged.Broadcast(VariantDataAsset);
-		}
-		else if (!bIsBuildInProgress)
-		{
-			ApplyActiveVariant();
-		}
+		ParseResultFrameBudgetMs = FMath::Clamp(ParseResultFrameBudgetMs, 2.0f, 5.0f);
+		MaxParseResultsPerTick = FMath::Max(1, MaxParseResultsPerTick);
 	}
-
 }
 #endif
 
+UsdCarFactoryPipelineBuild::FUsdProxyBuildRequest AUsdHierarchicalBuildActor::MakeBuildRequest() const
+{
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildRequest Request;
+	Request.TargetActor = const_cast<AUsdHierarchicalBuildActor*>(this);
+	Request.SourceUsdPath = SourceUsdFile.FilePath;
+	Request.GeneratedDataAsset = GeneratedDataAsset;
+	Request.StaticMeshProxyActorClass = StaticMeshProxyActorClass;
+	Request.TransformProxyActorClass = TransformProxyActorClass;
+	Request.bBuildAsync = bBuildAsync;
+	Request.MaxPrimBuildPerTick = MaxPrimBuildPerTick;
+	Request.ParseResultFrameBudgetMs = ParseResultFrameBudgetMs;
+	Request.MaxParseResultsPerTick = MaxParseResultsPerTick;
+	return Request;
+}
+
+UUsdCarFactoryBuildSubsystem* AUsdHierarchicalBuildActor::GetBuildSubsystem() const
+{
+	return UUsdCarFactoryBuildSubsystem::Get();
+}
+
 void AUsdHierarchicalBuildActor::LoadAndBuild()
+{
+#if WITH_EDITOR
+	FUsdCarFactoryBuildInputs Inputs;
+	Inputs.TargetActor = this;
+	Inputs.SourceUsdFile = SourceUsdFile;
+	Inputs.GeneratedDataAsset = GeneratedDataAsset;
+	Inputs.StaticMeshProxyActorClass = StaticMeshProxyActorClass;
+	Inputs.TransformProxyActorClass = TransformProxyActorClass;
+	Inputs.bBuildAsync = bBuildAsync;
+	Inputs.MaxPrimBuildPerTick = MaxPrimBuildPerTick;
+	Inputs.ParseResultFrameBudgetMs = ParseResultFrameBudgetMs;
+	Inputs.MaxParseResultsPerTick = MaxParseResultsPerTick;
+
+	if (GEditor)
+	{
+		if (UUsdCarFactoryCoordinatorSubsystem* CoordinatorSubsystem = GEditor->GetEditorSubsystem<UUsdCarFactoryCoordinatorSubsystem>())
+		{
+			CoordinatorSubsystem->RunBuild(Inputs);
+			return;
+		}
+	}
+
+	UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve UUsdCarFactoryCoordinatorSubsystem."));
+#else
+	UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("LoadAndBuild can only run in editor."));
+#endif
+}
+
+void AUsdHierarchicalBuildActor::ExecuteBuildPipeline()
 {
 #if WITH_EDITOR
 	UE_LOG(LogUsdCarFactoryPipelineBuild, Log, TEXT("LoadAndBuild called. SourceUsdFile: '%s'"), *SourceUsdFile.FilePath);
@@ -362,37 +437,39 @@ void AUsdHierarchicalBuildActor::LoadAndBuild()
 		);
 	}
 
-	UCarGeneratedAssemblyDataAsset* BuildAsset = ResolveOrCreateGeneratedDataAsset();
+	UCarGeneratedAssemblyDataAsset* BuildAsset = nullptr;
+	UUsdAssetCache3* UsdAssetCache = nullptr;
+	FString ResolveMessage;
+	if (GEditor)
+	{
+		if (UUsdCarFactoryDataAssetSubsystem* DataAssetSubsystem = GEditor->GetEditorSubsystem<UUsdCarFactoryDataAssetSubsystem>())
+		{
+			FUsdCarFactoryBuildInputs Inputs;
+			Inputs.TargetActor = this;
+			Inputs.SourceUsdFile = SourceUsdFile;
+			Inputs.GeneratedDataAsset = GeneratedDataAsset;
+			DataAssetSubsystem->ResolveOrCreateBuildAssets(Inputs, BuildAsset, UsdAssetCache, ResolveMessage);
+		}
+	}
 	if (!BuildAsset)
 	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve or create GeneratedDataAsset."));
+		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve or create GeneratedDataAsset. %s"), *ResolveMessage);
 		return;
-	}
-
-	UCarUsdVariantDataAsset* VariantAsset =
-		bAutoCreateVariantDataAssetOnBuild ? ResolveOrCreateVariantDataAsset() : VariantDataAsset.Get();
-	if (bAutoCreateVariantDataAssetOnBuild && !VariantAsset)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve or create VariantDataAsset."));
-		return;
-	}
-
-	if (VariantAsset)
-	{
-		EnsureLegacyPartsMigrated(BuildAsset, VariantAsset);
-		ActiveVariantName = VariantAsset->ActiveVariantName;
-	}
-	else
-	{
-		ActiveVariantName = NAME_None;
 	}
 
 	ResetPendingApplyState();
 	ResetPendingDiffState();
 	ResetPendingSourceRefreshState();
-	bParseResultPumpScheduled = false;
 	BuildPreviousPartIndexCache();
-	ConfigureGlobalParseScheduler(MaxConcurrentParseTasks);
+
+	if (UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem())
+	{
+		UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+		JobState.ResetForNextBuild();
+		JobState.ActiveRequest = MakeBuildRequest();
+		JobState.ActiveBuildStartSeconds = ActiveBuildStartSeconds;
+		JobState.Phase = UsdCarFactoryPipelineBuild::EUsdProxyBuildJobPhase::Scanning;
+	}
 
 	FString NormalizedSourceUsdPath;
 	FDateTime SourceUsdTimestampUtc;
@@ -423,13 +500,11 @@ void AUsdHierarchicalBuildActor::LoadAndBuild()
 
 				if (bBuildAsync)
 				{
-					BeginAsyncSourceDeltaScan(
-						NormalizedSourceUsdPath,
-						SourceUsdTimestampUtc,
-						SourceUsdFileSizeBytes,
-						MoveTemp(CacheSnapshots)
+					UE_LOG(
+						LogUsdCarFactoryPipelineBuild,
+						Warning,
+						TEXT("USD source delta scan is forced to run synchronously because UnrealUSD stage access is unstable on background threads.")
 					);
-					return;
 				}
 
 				const double DeltaScanStartSeconds = FPlatformTime::Seconds();
@@ -476,7 +551,7 @@ void AUsdHierarchicalBuildActor::LoadAndBuild()
 	UE_LOG(LogUsdCarFactoryPipelineBuild, Log, TEXT("Collected %d PrimNodes from GeneratedDataAsset. Starting build..."), PrimNodes.Num());
 	StartBuildFromPreparedPrimNodes(BuildAsset, MoveTemp(PrimNodes), false, false);
 #else
-	UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("LoadAndBuild can only run in editor."));
+	UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("ExecuteBuildPipeline can only run in editor."));
 #endif
 }
 
@@ -568,7 +643,7 @@ void AUsdHierarchicalBuildActor::BuildCachePrimSnapshots(
 		FCachePrimSnapshot Snapshot;
 		Snapshot.ParentPrimPath = Record.ParentPrimPath;
 		Snapshot.RelativeTransform = Record.RelativeTransform;
-		Snapshot.bIsStaticMesh = (Record.StaticMesh != nullptr);
+		Snapshot.bIsStaticMesh = Record.bIsStaticMesh || (Record.StaticMesh != nullptr);
 		Snapshot.MeshContentHash = Record.MeshContentHash;
 		OutCacheSnapshots.Add(Record.PrimPath, MoveTemp(Snapshot));
 	}
@@ -663,6 +738,8 @@ bool AUsdHierarchicalBuildActor::RunSourceDeltaScanSync(
 	OutDeltaResult = FSourceDeltaScanResult{};
 
 #if USE_USD_SDK
+	FScopeLock SourceDeltaScanLock(&UsdCarFactoryPipelineBuild::SourceDeltaScanMutex);
+
 	UE::FUsdStage Stage = UnrealUSDWrapper::OpenStage(*SourceUsdPath, EUsdInitialLoadSet::LoadAll);
 	if (!Stage)
 	{
@@ -820,8 +897,10 @@ bool AUsdHierarchicalBuildActor::ImportMeshAssetsForPrimPaths(
 	UE_LOG(LogUsdCarFactoryPipelineBuild, Log, TEXT("ImportMeshAssetsForPrimPaths: Importing %d prim paths from '%s'"), PrimPaths.Num(), *SourceUsdPath);
 
 	FUsdStageImportContext ImportContext;
-	// Try to read from stage cache first - the stage should already be open from delta scan
-	ImportContext.bReadFromStageCache = true;
+	// This path imports directly from a USD file, not from an already-opened stage actor.
+	// Reading from stage cache here has been producing incomplete imports (for example 2150 prims -> 1 mesh),
+	// so force a fresh stage open for deterministic mesh extraction.
+	ImportContext.bReadFromStageCache = false;
 
 	const FString ImportObjectName = FPaths::GetBaseFilename(SourceUsdPath, false);
 	const FString SourceIdentifier = UsdCarFactoryPipelineBuild::ExtractSourceIdentifier(SourceUsdPath);
@@ -848,12 +927,19 @@ bool AUsdHierarchicalBuildActor::ImportMeshAssetsForPrimPaths(
 	ImportOptions->bImportActors = false;
 	ImportOptions->bImportGeometry = true;
 	ImportOptions->bImportMaterials = true;
+	ImportOptions->bImportOnlyUsedMaterials = true;
 	ImportOptions->PrimsToImport = PrimPaths;
 	ImportOptions->bUseExistingAssetCache = true;
+	// This path needs one mesh asset per requested mesh prim. The USD importer defaults are tuned for full-stage
+	// imports and may collapse component/subcomponent subtrees or share identical assets, which causes our leaf-prim
+	// selective import path to resolve far fewer meshes than requested.
+	ImportOptions->bShareAssetsForIdenticalPrims = false;
+	ImportOptions->bUsePrimKindsForCollapsing = false;
+	ImportOptions->KindsToCollapse = 0;
+	ImportOptions->bMergeIdenticalMaterialSlots = false;
+	ImportOptions->bInterpretLODs = false;
 
-	UUsdAssetCache3* ActiveAssetCache = UsdAssetCacheReference
-		? UsdAssetCacheReference.Get()
-		: (GeneratedDataAsset ? GeneratedDataAsset->UsdAssetCache.Get() : nullptr);
+	UUsdAssetCache3* ActiveAssetCache = GeneratedDataAsset ? GeneratedDataAsset->UsdAssetCache.Get() : nullptr;
 	if (ActiveAssetCache)
 	{
 		ImportContext.UsdAssetCache = ActiveAssetCache;
@@ -862,14 +948,24 @@ bool AUsdHierarchicalBuildActor::ImportMeshAssetsForPrimPaths(
 
 	UUsdStageImporter StageImporter;
 	StageImporter.ImportFromFile(ImportContext);
-	if (!ImportContext.Stage)
+	if (ImportContext.ImportedAssets.IsEmpty())
 	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("ImportMeshAssetsForPrimPaths: Stage importer failed, imported %d assets"), ImportContext.ImportedAssets.Num());
-		// Don't fail completely - we might still have some assets from the cache
+		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("ImportMeshAssetsForPrimPaths: Import completed without any assets"));
 	}
 	else
 	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Log, TEXT("ImportMeshAssetsForPrimPaths: Import succeeded, got %d assets"), ImportContext.ImportedAssets.Num());
+		UE_LOG(
+			LogUsdCarFactoryPipelineBuild,
+			Log,
+			TEXT("ImportMeshAssetsForPrimPaths: Import completed with %d assets for %d requested prims"),
+			ImportContext.ImportedAssets.Num(),
+			PrimPaths.Num()
+		);
+	}
+
+	if (ActiveAssetCache)
+	{
+		UsdCarFactoryPipelineBuild::RewritePublishedAssetsIntoCache(ActiveAssetCache, ImportContext.ImportedAssets);
 	}
 
 	TMap<FString, TObjectPtr<UStaticMesh>> BatchPrimToMesh;
@@ -982,6 +1078,12 @@ void AUsdHierarchicalBuildActor::BeginAsyncSourceDeltaScan(
 )
 {
 #if WITH_EDITOR
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
 	FSourceParseTask ParseTask;
 	ParseTask.TargetActor = this;
 	ParseTask.RequestId = ActiveBuildRequestId;
@@ -990,134 +1092,32 @@ void AUsdHierarchicalBuildActor::BeginAsyncSourceDeltaScan(
 	ParseTask.SourceUsdFileSizeBytes = SourceUsdFileSizeBytes;
 	ParseTask.CacheSnapshots = MoveTemp(CacheSnapshots);
 
-	ConfigureGlobalParseScheduler(MaxConcurrentParseTasks);
-	EnqueueGlobalParseTask(MoveTemp(ParseTask));
+	BuildSubsystem->EnqueueGlobalParseTask(MoveTemp(ParseTask));
 	ScheduleParseResultPump();
 #endif
-}
-
-AUsdHierarchicalBuildActor::FGlobalParseSchedulerState& AUsdHierarchicalBuildActor::GetGlobalParseSchedulerState()
-{
-	static FGlobalParseSchedulerState SchedulerState;
-	return SchedulerState;
-}
-
-void AUsdHierarchicalBuildActor::ConfigureGlobalParseScheduler(int32 InMaxConcurrentTasks)
-{
-	FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	SchedulerState.MaxConcurrentTasks.Store(FMath::Clamp(InMaxConcurrentTasks, 2, 4));
-	TryDispatchGlobalParseWorkers();
-}
-
-void AUsdHierarchicalBuildActor::EnqueueGlobalParseTask(FSourceParseTask&& Task)
-{
-	FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	SchedulerState.PendingTasks.Enqueue(MoveTemp(Task));
-	SchedulerState.PendingTaskCount.Increment();
-	TryDispatchGlobalParseWorkers();
-}
-
-void AUsdHierarchicalBuildActor::TryDispatchGlobalParseWorkers()
-{
-	FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	FScopeLock SchedulerLock(&SchedulerState.DispatchMutex);
-
-	while (SchedulerState.ActiveWorkerCount.Load() < SchedulerState.MaxConcurrentTasks.Load())
-	{
-		FSourceParseTask TaskToRun;
-		if (!SchedulerState.PendingTasks.Dequeue(TaskToRun))
-		{
-			break;
-		}
-
-		SchedulerState.PendingTaskCount.Decrement();
-		++SchedulerState.ActiveWorkerCount;
-
-		Async(
-			EAsyncExecution::ThreadPool,
-			[TaskToRun = MoveTemp(TaskToRun)]() mutable
-			{
-				AUsdHierarchicalBuildActor::ExecuteGlobalParseTask(MoveTemp(TaskToRun));
-			}
-		);
-	}
-}
-
-void AUsdHierarchicalBuildActor::ExecuteGlobalParseTask(FSourceParseTask&& Task)
-{
-	const double DeltaScanStartSeconds = FPlatformTime::Seconds();
-	FSourceDeltaScanResult DeltaResult;
-	const bool bDeltaScanSucceeded = RunSourceDeltaScanSync(Task.SourceUsdPath, Task.CacheSnapshots, DeltaResult);
-	FSourceParseResult ParseResult = MakeParseResult(
-		Task.TargetActor,
-		Task.RequestId,
-		Task.SourceUsdPath,
-		Task.SourceUsdTimestampUtc,
-		Task.SourceUsdFileSizeBytes,
-		MoveTemp(DeltaResult),
-		bDeltaScanSucceeded,
-		FPlatformTime::Seconds() - DeltaScanStartSeconds,
-		TEXT("Global parse task failed.")
-	);
-
-	const TWeakObjectPtr<AUsdHierarchicalBuildActor> TargetActor = ParseResult.TargetActor;
-	FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	SchedulerState.CompletedResults.Enqueue(MoveTemp(ParseResult));
-	SchedulerState.CompletedResultCount.Increment();
-	--SchedulerState.ActiveWorkerCount;
-	AsyncTask(
-		ENamedThreads::GameThread,
-		[TargetActor]()
-		{
-			if (AUsdHierarchicalBuildActor* StrongActor = TargetActor.Get())
-			{
-				StrongActor->ScheduleParseResultPump();
-			}
-		}
-	);
-	TryDispatchGlobalParseWorkers();
-}
-
-bool AUsdHierarchicalBuildActor::DequeueGlobalParseResult(FSourceParseResult& OutResult)
-{
-	FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	if (!SchedulerState.CompletedResults.Dequeue(OutResult))
-	{
-		return false;
-	}
-
-	SchedulerState.CompletedResultCount.Decrement();
-	return true;
-}
-
-bool AUsdHierarchicalBuildActor::HasGlobalParseWork()
-{
-	const FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	return SchedulerState.PendingTaskCount.GetValue() > 0
-		|| SchedulerState.ActiveWorkerCount.Load() > 0
-		|| SchedulerState.CompletedResultCount.GetValue() > 0;
-}
-
-bool AUsdHierarchicalBuildActor::HasGlobalCompletedParseResults()
-{
-	const FGlobalParseSchedulerState& SchedulerState = GetGlobalParseSchedulerState();
-	return SchedulerState.CompletedResultCount.GetValue() > 0;
 }
 
 void AUsdHierarchicalBuildActor::ScheduleParseResultPump()
 {
 #if WITH_EDITOR
-	if (bParseResultPumpScheduled)
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
 	{
 		return;
 	}
 
-	if (!bIsBuildInProgress && !HasGlobalParseWork())
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	if (JobState.bParseResultPumpScheduled)
 	{
 		return;
 	}
 
-	bParseResultPumpScheduled = true;
+	if (!bIsBuildInProgress && !BuildSubsystem->HasGlobalParseWork())
+	{
+		return;
+	}
+
+	JobState.bParseResultPumpScheduled = true;
 	const TWeakObjectPtr<AUsdHierarchicalBuildActor> WeakThis(this);
 	AsyncTask(
 		ENamedThreads::GameThread,
@@ -1135,7 +1135,14 @@ void AUsdHierarchicalBuildActor::ScheduleParseResultPump()
 void AUsdHierarchicalBuildActor::ProcessParseResultPump()
 {
 #if WITH_EDITOR
-	bParseResultPumpScheduled = false;
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	JobState.bParseResultPumpScheduled = false;
 
 	const double BudgetSeconds = FMath::Clamp(static_cast<double>(ParseResultFrameBudgetMs), 2.0, 5.0) / 1000.0;
 	const int32 MaxResultsToConsume = FMath::Max(1, MaxParseResultsPerTick);
@@ -1148,7 +1155,7 @@ void AUsdHierarchicalBuildActor::ProcessParseResultPump()
 	)
 	{
 		FSourceParseResult ParseResult;
-		if (!DequeueGlobalParseResult(ParseResult))
+		if (!BuildSubsystem->DequeueGlobalParseResult(ParseResult))
 		{
 			break;
 		}
@@ -1160,7 +1167,7 @@ void AUsdHierarchicalBuildActor::ProcessParseResultPump()
 		}
 	}
 
-	if (HasGlobalCompletedParseResults())
+	if (BuildSubsystem->HasGlobalCompletedParseResults())
 	{
 		ScheduleParseResultPump();
 	}
@@ -1185,8 +1192,24 @@ void AUsdHierarchicalBuildActor::HandleParseResult(FSourceParseResult&& ParseRes
 	UCarGeneratedAssemblyDataAsset* BuildAsset = GeneratedDataAsset.Get();
 	if (!BuildAsset)
 	{
-		BuildAsset = ResolveOrCreateGeneratedDataAsset();
-	}
+		UUsdAssetCache3* UsdAssetCache = nullptr;
+		FString ResolveMessage;
+			if (GEditor)
+			{
+				if (UUsdCarFactoryDataAssetSubsystem* DataAssetSubsystem = GEditor->GetEditorSubsystem<UUsdCarFactoryDataAssetSubsystem>())
+				{
+					FUsdCarFactoryBuildInputs Inputs;
+					Inputs.TargetActor = this;
+					Inputs.SourceUsdFile = SourceUsdFile;
+					Inputs.GeneratedDataAsset = GeneratedDataAsset;
+					if (!DataAssetSubsystem->ResolveOrCreateBuildAssets(Inputs, BuildAsset, UsdAssetCache, ResolveMessage))
+					{
+						UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("%s"), *ResolveMessage);
+						BuildAsset = nullptr;
+					}
+				}
+			}
+		}
 
 	if (!BuildAsset)
 	{
@@ -1251,45 +1274,16 @@ void AUsdHierarchicalBuildActor::HandleParseResult(FSourceParseResult&& ParseRes
 	);
 
 	TArray<FPrimNodeBuildData> FallbackPrimNodes;
-	const bool bCollectedFallbackFromSourceUsd = CollectPrimNodeDataFromSourceUsd(FallbackPrimNodes);
-	if (!bCollectedFallbackFromSourceUsd)
-	{
-		CollectPrimNodeDataFromGeneratedAsset(BuildAsset, FallbackPrimNodes);
-	}
-	else
-	{
-		TArray<FString> MeshPrimPaths;
-		for (const FPrimNodeBuildData& PrimNode : FallbackPrimNodes)
-		{
-			if (PrimNode.bIsStaticMesh && !PrimNode.PrimPath.IsEmpty())
-			{
-				MeshPrimPaths.Add(PrimNode.PrimPath);
-			}
-		}
-
-		if (MeshPrimPaths.Num() > 0)
-		{
-			TMap<FString, TObjectPtr<UStaticMesh>> FallbackPrimToMesh;
-			TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> FallbackPrimToMaterials;
-			ImportMeshAssetsForPrimPaths(
-				ParseResult.SourceUsdPath,
-				MeshPrimPaths,
-				FallbackPrimToMesh,
-				FallbackPrimToMaterials
-			);
-			ApplyImportedAssetsToPrimNodes(FallbackPrimNodes, FallbackPrimToMesh, FallbackPrimToMaterials);
-		}
-
-		UpdateSourceRefreshMetadata(
-			BuildAsset,
-			ParseResult.SourceUsdPath,
-			ParseResult.SourceUsdTimestampUtc,
-			ParseResult.SourceUsdFileSizeBytes
-		);
-	}
+	CollectPrimNodeDataFromGeneratedAsset(BuildAsset, FallbackPrimNodes);
+	UE_LOG(
+		LogUsdCarFactoryPipelineBuild,
+		Warning,
+		TEXT("Source delta refresh degraded to cached generated asset data for '%s'. No full cache asset regeneration will be performed."),
+		*ParseResult.SourceUsdPath
+	);
 
 	ActiveSourceRefreshSeconds = ActiveDeltaScanSeconds;
-	StartBuildFromPreparedPrimNodes(BuildAsset, MoveTemp(FallbackPrimNodes), bCollectedFallbackFromSourceUsd, true);
+	StartBuildFromPreparedPrimNodes(BuildAsset, MoveTemp(FallbackPrimNodes), false, true);
 #endif
 }
 
@@ -1309,27 +1303,36 @@ void AUsdHierarchicalBuildActor::BeginSelectiveImportBatches(
 )
 {
 #if WITH_EDITOR
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
 	ResetPendingSourceRefreshState();
 
-	PendingSourceBuildAsset = BuildAsset;
-	PendingSourcePrimNodes = MoveTemp(PrimNodes);
-	PendingSelectiveImportPrimPaths = MoveTemp(ChangedMeshPrimPaths);
-	PendingSourceUsdPath = SourceUsdPath;
-	PendingSourceUsdTimestampUtc = SourceUsdTimestampUtc;
-	PendingSourceUsdFileSizeBytes = SourceUsdFileSizeBytes;
-	PendingSourceRequestId = RequestId;
-	PendingSelectiveImportIndex = 0;
-	PendingSelectiveImportBatchCount = 0;
-	bPendingSourceRefreshFromUsd = bRefreshedFromSourceUsd;
-	bPendingSelectiveImportFallbackToFullImport =
-		PendingSelectiveImportPrimPaths.Num() > UsdCarFactoryPipelineBuild::SelectiveImportMaxPrimPaths;
-	PendingDeltaAddedCount = AddedCount;
-	PendingDeltaRemovedCount = RemovedCount;
-	PendingDeltaChangedMeshCount = ChangedMeshCount;
-	PendingDeltaChangedXformCount = ChangedXformCount;
+	JobState.Phase = UsdCarFactoryPipelineBuild::EUsdProxyBuildJobPhase::Importing;
+	JobState.PendingBuildPlan.Reset();
+	JobState.PendingBuildPlan.BuildAsset = BuildAsset;
+	JobState.PendingBuildPlan.PrimNodes = MoveTemp(PrimNodes);
+	JobState.PendingBuildPlan.RequestId = RequestId;
+	JobState.PendingBuildPlan.AddedPrimCount = AddedCount;
+	JobState.PendingBuildPlan.RemovedPrimCount = RemovedCount;
+	JobState.PendingBuildPlan.ChangedMeshPrimCount = ChangedMeshCount;
+	JobState.PendingBuildPlan.ChangedTransformPrimCount = ChangedXformCount;
+	JobState.PendingBuildPlan.bRefreshedFromSourceUsd = bRefreshedFromSourceUsd;
+	JobState.PendingSelectiveImportPrimPaths = MoveTemp(ChangedMeshPrimPaths);
+	JobState.ActiveRequest.SourceUsdPath = SourceUsdPath;
+	JobState.ActiveRequest.SourceUsdTimestampUtc = SourceUsdTimestampUtc;
+	JobState.ActiveRequest.SourceUsdFileSizeBytes = SourceUsdFileSizeBytes;
+	JobState.ActiveRequest.GeneratedDataAsset = BuildAsset;
+	JobState.PendingSelectiveImportIndex = 0;
+	JobState.PendingSelectiveImportBatchCount = 0;
 	ActiveSelectiveImportSeconds = FPlatformTime::Seconds();
+	JobState.ActiveSelectiveImportSeconds = ActiveSelectiveImportSeconds;
 
-	if (PendingSelectiveImportPrimPaths.IsEmpty() || bPendingSelectiveImportFallbackToFullImport)
+	if (JobState.PendingSelectiveImportPrimPaths.IsEmpty())
 	{
 		FinalizeSourceRefreshAndStartBuild();
 		return;
@@ -1351,45 +1354,47 @@ void AUsdHierarchicalBuildActor::BeginSelectiveImportBatches(
 void AUsdHierarchicalBuildActor::ProcessSelectiveImportBatch()
 {
 #if WITH_EDITOR
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
 	if (
 		!bIsBuildInProgress
-		|| !PendingSourceBuildAsset
-		|| PendingSourceRequestId != ActiveBuildRequestId
+		|| !JobState.PendingBuildPlan.BuildAsset
+		|| JobState.PendingBuildPlan.RequestId != ActiveBuildRequestId
 	)
 	{
 		ResetPendingSourceRefreshState();
 		return;
 	}
 
-	if (bPendingSelectiveImportFallbackToFullImport)
-	{
-		FinalizeSourceRefreshAndStartBuild();
-		return;
-	}
-
-	if (PendingSelectiveImportIndex >= PendingSelectiveImportPrimPaths.Num())
+	if (JobState.PendingSelectiveImportIndex >= JobState.PendingSelectiveImportPrimPaths.Num())
 	{
 		FinalizeSourceRefreshAndStartBuild();
 		return;
 	}
 
 	const int32 BatchEnd = FMath::Min(
-		PendingSelectiveImportIndex + UsdCarFactoryPipelineBuild::SelectiveImportBatchSize,
-		PendingSelectiveImportPrimPaths.Num()
+		JobState.PendingSelectiveImportIndex + UsdCarFactoryPipelineBuild::SelectiveImportBatchSize,
+		JobState.PendingSelectiveImportPrimPaths.Num()
 	);
 
 	TArray<FString> BatchPrimPaths;
-	BatchPrimPaths.Reserve(BatchEnd - PendingSelectiveImportIndex);
-	for (int32 PrimPathIndex = PendingSelectiveImportIndex; PrimPathIndex < BatchEnd; ++PrimPathIndex)
+	BatchPrimPaths.Reserve(BatchEnd - JobState.PendingSelectiveImportIndex);
+	for (int32 PrimPathIndex = JobState.PendingSelectiveImportIndex; PrimPathIndex < BatchEnd; ++PrimPathIndex)
 	{
-		BatchPrimPaths.Add(PendingSelectiveImportPrimPaths[PrimPathIndex]);
+		BatchPrimPaths.Add(JobState.PendingSelectiveImportPrimPaths[PrimPathIndex]);
 	}
 
 	TMap<FString, TObjectPtr<UStaticMesh>> BatchPrimToMesh;
 	TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> BatchPrimToMaterials;
-	if (!ImportMeshAssetsForPrimPaths(PendingSourceUsdPath, BatchPrimPaths, BatchPrimToMesh, BatchPrimToMaterials))
+	if (!ImportMeshAssetsForPrimPaths(JobState.ActiveRequest.SourceUsdPath, BatchPrimPaths, BatchPrimToMesh, BatchPrimToMaterials))
 	{
-		bPendingSelectiveImportFallbackToFullImport = true;
+		JobState.PendingRetryImportPrimPaths = MoveTemp(BatchPrimPaths);
+		++JobState.PendingSelectiveImportRetryCount;
 		FinalizeSourceRefreshAndStartBuild();
 		return;
 	}
@@ -1398,7 +1403,8 @@ void AUsdHierarchicalBuildActor::ProcessSelectiveImportBatch()
 	{
 		if (!Pair.Key.IsEmpty() && Pair.Value)
 		{
-			PendingSelectivePrimToMesh.FindOrAdd(Pair.Key) = Pair.Value;
+			JobState.PendingSelectivePrimToMesh.FindOrAdd(Pair.Key) = Pair.Value;
+			JobState.PendingResolvedSelectiveImportPrimPaths.Add(Pair.Key);
 		}
 	}
 
@@ -1409,17 +1415,19 @@ void AUsdHierarchicalBuildActor::ProcessSelectiveImportBatch()
 			continue;
 		}
 
-		TArray<TObjectPtr<UMaterialInterface>>& ExistingMaterials = PendingSelectivePrimToMaterials.FindOrAdd(Pair.Key);
+		TArray<TObjectPtr<UMaterialInterface>>& ExistingMaterials = JobState.PendingSelectivePrimToMaterials.FindOrAdd(Pair.Key);
 		for (UMaterialInterface* Material : Pair.Value)
 		{
 			ExistingMaterials.AddUnique(Material);
 		}
 	}
 
-	++PendingSelectiveImportBatchCount;
-	PendingSelectiveImportIndex = BatchEnd;
+	++JobState.PendingSelectiveImportBatchCount;
+	JobState.PendingBuildPlan.ImportedBatchCount = JobState.PendingSelectiveImportBatchCount;
+	JobState.PendingBuildPlan.bUsedSelectiveImport = true;
+	JobState.PendingSelectiveImportIndex = BatchEnd;
 
-	if (PendingSelectiveImportIndex >= PendingSelectiveImportPrimPaths.Num())
+	if (JobState.PendingSelectiveImportIndex >= JobState.PendingSelectiveImportPrimPaths.Num())
 	{
 		FinalizeSourceRefreshAndStartBuild();
 		return;
@@ -1442,23 +1450,31 @@ void AUsdHierarchicalBuildActor::ProcessSelectiveImportBatch()
 void AUsdHierarchicalBuildActor::FinalizeSourceRefreshAndStartBuild()
 {
 #if WITH_EDITOR
-	UCarGeneratedAssemblyDataAsset* BuildAsset = PendingSourceBuildAsset.Get();
-	const FString SourceUsdPath = PendingSourceUsdPath;
-	const FDateTime SourceUsdTimestampUtc = PendingSourceUsdTimestampUtc;
-	const int64 SourceUsdFileSizeBytes = PendingSourceUsdFileSizeBytes;
-	const int32 RequestId = PendingSourceRequestId;
-	const bool bRefreshedFromSourceUsd = bPendingSourceRefreshFromUsd;
-	const bool bShouldFallbackToFullImport = bPendingSelectiveImportFallbackToFullImport;
-	const int32 AddedCount = PendingDeltaAddedCount;
-	const int32 RemovedCount = PendingDeltaRemovedCount;
-	const int32 ChangedMeshCount = PendingDeltaChangedMeshCount;
-	const int32 ChangedXformCount = PendingDeltaChangedXformCount;
-	const int32 ImportedBatchCount = PendingSelectiveImportBatchCount;
-	const TArray<FString> RequestedSelectiveImportPrimPaths = PendingSelectiveImportPrimPaths;
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
 
-	TArray<FPrimNodeBuildData> PrimNodes = MoveTemp(PendingSourcePrimNodes);
-	TMap<FString, TObjectPtr<UStaticMesh>> PrimToMesh = MoveTemp(PendingSelectivePrimToMesh);
-	TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> PrimToMaterials = MoveTemp(PendingSelectivePrimToMaterials);
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	UCarGeneratedAssemblyDataAsset* BuildAsset = JobState.PendingBuildPlan.BuildAsset.Get();
+	const FString SourceUsdPath = JobState.ActiveRequest.SourceUsdPath;
+	const int32 RequestId = JobState.PendingBuildPlan.RequestId;
+	const bool bRefreshedFromSourceUsd = JobState.PendingBuildPlan.bRefreshedFromSourceUsd;
+	const int32 AddedCount = JobState.PendingBuildPlan.AddedPrimCount;
+	const int32 RemovedCount = JobState.PendingBuildPlan.RemovedPrimCount;
+	const int32 ChangedMeshCount = JobState.PendingBuildPlan.ChangedMeshPrimCount;
+	const int32 ChangedXformCount = JobState.PendingBuildPlan.ChangedTransformPrimCount;
+	const int32 ImportedBatchCount = JobState.PendingBuildPlan.ImportedBatchCount;
+	const TArray<FString> RequestedSelectiveImportPrimPaths = JobState.PendingSelectiveImportPrimPaths;
+
+	TArray<FPrimNodeBuildData> PrimNodes = MoveTemp(JobState.PendingBuildPlan.PrimNodes);
+	TMap<FString, TObjectPtr<UStaticMesh>> PrimToMesh = MoveTemp(JobState.PendingSelectivePrimToMesh);
+	TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> PrimToMaterials = MoveTemp(JobState.PendingSelectivePrimToMaterials);
+	const TArray<FString> RetryPrimPaths = MoveTemp(JobState.PendingRetryImportPrimPaths);
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildPlan BuildPlan = MoveTemp(JobState.PendingBuildPlan);
+	const FDateTime SourceUsdTimestampUtc = JobState.ActiveRequest.SourceUsdTimestampUtc;
+	const int64 SourceUsdFileSizeBytes = JobState.ActiveRequest.SourceUsdFileSizeBytes;
 
 	ResetPendingSourceRefreshState();
 
@@ -1471,112 +1487,41 @@ void AUsdHierarchicalBuildActor::FinalizeSourceRefreshAndStartBuild()
 		ActiveSelectiveImportSeconds > 0.0 ? FPlatformTime::Seconds() - ActiveSelectiveImportSeconds : 0.0;
 
 	bool bAppliedFreshSourceData = false;
-	if (bShouldFallbackToFullImport)
+
+	if (!RetryPrimPaths.IsEmpty())
 	{
-		PrimNodes.Reset();
-		const bool bCollectedFromSourceUsd = CollectPrimNodeDataFromSourceUsd(PrimNodes);
-		if (!bCollectedFromSourceUsd)
+		RetryMissingSelectiveImports(
+			PrimNodes,
+			SourceUsdPath,
+			RetryPrimPaths,
+			PrimToMesh,
+			PrimToMaterials,
+			BuildPlan
+		);
+	}
+
+	bool bMissingSelectiveImports = false;
+	for (const FString& RequestedPrimPath : RequestedSelectiveImportPrimPaths)
+	{
+		if (!RequestedPrimPath.IsEmpty() && !PrimToMesh.Contains(RequestedPrimPath))
 		{
-			CollectPrimNodeDataFromGeneratedAsset(BuildAsset, PrimNodes);
+			bMissingSelectiveImports = true;
+			break;
 		}
+	}
 
-		if (bCollectedFromSourceUsd)
-		{
-			// Collect all mesh prim paths for import
-			TArray<FString> MeshPrimPaths;
-			for (const FPrimNodeBuildData& PrimNode : PrimNodes)
-			{
-				if (PrimNode.bIsStaticMesh && !PrimNode.PrimPath.IsEmpty())
-				{
-					MeshPrimPaths.Add(PrimNode.PrimPath);
-				}
-			}
-
-			// Import mesh assets for all mesh prims
-			TMap<FString, TObjectPtr<UStaticMesh>> FallbackPrimToMesh;
-			TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> FallbackPrimToMaterials;
-			if (MeshPrimPaths.Num() > 0)
-			{
-				UE_LOG(
-					LogUsdCarFactoryPipelineBuild,
-					Log,
-					TEXT("Fallback full import: importing %d mesh assets from '%s'"),
-					MeshPrimPaths.Num(),
-					*SourceUsdPath
-				);
-				ImportMeshAssetsForPrimPaths(SourceUsdPath, MeshPrimPaths, FallbackPrimToMesh, FallbackPrimToMaterials);
-				ApplyImportedAssetsToPrimNodes(PrimNodes, FallbackPrimToMesh, FallbackPrimToMaterials);
-			}
-
-			UpdateSourceRefreshMetadata(BuildAsset, SourceUsdPath, SourceUsdTimestampUtc, SourceUsdFileSizeBytes);
-			bAppliedFreshSourceData = true;
-		}
+	if (bMissingSelectiveImports)
+	{
+		ApplyImportedAssetsToPrimNodes(PrimNodes, PrimToMesh, PrimToMaterials);
+		BuildPlan.bDegradedToCachedMeshes = true;
+		BuildPlan.DegradedReason =
+			TEXT("Selective import did not resolve every changed mesh prim; unresolved prims continue using cached mesh assets and source refresh metadata was not advanced.");
 	}
 	else
 	{
-		bool bMissingSelectiveImports = false;
-		for (const FString& RequestedPrimPath : RequestedSelectiveImportPrimPaths)
-		{
-			if (!RequestedPrimPath.IsEmpty() && !PrimToMesh.Contains(RequestedPrimPath))
-			{
-				bMissingSelectiveImports = true;
-				break;
-			}
-		}
-
-		if (bMissingSelectiveImports)
-		{
-			UE_LOG(
-				LogUsdCarFactoryPipelineBuild,
-				Warning,
-				TEXT("Selective import did not resolve all requested mesh prims for '%s'. Falling back to full source import."),
-				*SourceUsdPath
-			);
-
-			PrimNodes.Reset();
-			const bool bCollectedFromSourceUsd = CollectPrimNodeDataFromSourceUsd(PrimNodes);
-			if (!bCollectedFromSourceUsd)
-			{
-				CollectPrimNodeDataFromGeneratedAsset(BuildAsset, PrimNodes);
-			}
-			else
-			{
-				// Collect all mesh prim paths for import
-				TArray<FString> MeshPrimPaths;
-				for (const FPrimNodeBuildData& PrimNode : PrimNodes)
-				{
-					if (PrimNode.bIsStaticMesh && !PrimNode.PrimPath.IsEmpty())
-					{
-						MeshPrimPaths.Add(PrimNode.PrimPath);
-					}
-				}
-
-				// Import mesh assets for all mesh prims
-				TMap<FString, TObjectPtr<UStaticMesh>> FallbackPrimToMesh;
-				TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> FallbackPrimToMaterials;
-				if (MeshPrimPaths.Num() > 0)
-				{
-					UE_LOG(
-						LogUsdCarFactoryPipelineBuild,
-						Log,
-						TEXT("Fallback import (missing selective): importing %d mesh assets from '%s'"),
-						MeshPrimPaths.Num(),
-						*SourceUsdPath
-					);
-					ImportMeshAssetsForPrimPaths(SourceUsdPath, MeshPrimPaths, FallbackPrimToMesh, FallbackPrimToMaterials);
-					ApplyImportedAssetsToPrimNodes(PrimNodes, FallbackPrimToMesh, FallbackPrimToMaterials);
-				}
-
-				UpdateSourceRefreshMetadata(BuildAsset, SourceUsdPath, SourceUsdTimestampUtc, SourceUsdFileSizeBytes);
-				bAppliedFreshSourceData = true;
-			}
-		}
-		else
-		{
-			ApplyImportedAssetsToPrimNodes(PrimNodes, PrimToMesh, PrimToMaterials);
-			UpdateSourceRefreshMetadata(BuildAsset, SourceUsdPath, SourceUsdTimestampUtc, SourceUsdFileSizeBytes);
-			bAppliedFreshSourceData = true;
-		}
+		ApplyImportedAssetsToPrimNodes(PrimNodes, PrimToMesh, PrimToMaterials);
+		UpdateSourceRefreshMetadata(BuildAsset, SourceUsdPath, SourceUsdTimestampUtc, SourceUsdFileSizeBytes);
+		bAppliedFreshSourceData = true;
 	}
 
 	ActiveSourceRefreshSeconds = ActiveDeltaScanSeconds + ActiveSelectiveImportSeconds;
@@ -1585,17 +1530,22 @@ void AUsdHierarchicalBuildActor::FinalizeSourceRefreshAndStartBuild()
 		LogUsdCarFactoryPipelineBuild,
 		Log,
 		TEXT(
-			"Source delta refresh completed. added=%d removed=%d changed_mesh=%d changed_xform=%d imported_batches=%d fallback_full_import=%s delta_scan=%.3fs selective_import=%.3fs"
+			"Source delta refresh completed. added=%d removed=%d changed_mesh=%d changed_xform=%d imported_batches=%d degraded_to_cached=%s delta_scan=%.3fs selective_import=%.3fs"
 		),
 		AddedCount,
 		RemovedCount,
 		ChangedMeshCount,
 		ChangedXformCount,
 		ImportedBatchCount,
-		bShouldFallbackToFullImport ? TEXT("Yes") : TEXT("No"),
+		BuildPlan.bDegradedToCachedMeshes ? TEXT("Yes") : TEXT("No"),
 		ActiveDeltaScanSeconds,
 		ActiveSelectiveImportSeconds
 	);
+
+	if (BuildPlan.bDegradedToCachedMeshes)
+	{
+		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("Source refresh degraded to cached meshes: %s"), *BuildPlan.DegradedReason);
+	}
 
 	StartBuildFromPreparedPrimNodes(
 		BuildAsset,
@@ -1603,6 +1553,70 @@ void AUsdHierarchicalBuildActor::FinalizeSourceRefreshAndStartBuild()
 		bRefreshedFromSourceUsd && bAppliedFreshSourceData,
 		true
 	);
+#endif
+}
+
+void AUsdHierarchicalBuildActor::RetryMissingSelectiveImports(
+	TArray<FPrimNodeBuildData>& PrimNodes,
+	const FString& SourceUsdPath,
+	const TArray<FString>& RequestedPrimPaths,
+	TMap<FString, TObjectPtr<UStaticMesh>>& PrimToMesh,
+	TMap<FString, TArray<TObjectPtr<UMaterialInterface>>>& PrimToMaterials,
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildPlan& BuildPlan
+) const
+{
+#if WITH_EDITOR
+	TArray<FString> MissingPrimPaths;
+	for (const FString& RequestedPrimPath : RequestedPrimPaths)
+	{
+		if (!RequestedPrimPath.IsEmpty() && !PrimToMesh.Contains(RequestedPrimPath))
+		{
+			MissingPrimPaths.Add(RequestedPrimPath);
+		}
+	}
+
+	if (MissingPrimPaths.IsEmpty())
+	{
+		return;
+	}
+
+	UE_LOG(
+		LogUsdCarFactoryPipelineBuild,
+		Warning,
+		TEXT("Selective import missed %d mesh prims for '%s'. Retrying the missing prims before degrading to cached mesh assets."),
+		MissingPrimPaths.Num(),
+		*SourceUsdPath
+	);
+
+	TMap<FString, TObjectPtr<UStaticMesh>> RetryPrimToMesh;
+	TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> RetryPrimToMaterials;
+	if (ImportMeshAssetsForPrimPaths(SourceUsdPath, MissingPrimPaths, RetryPrimToMesh, RetryPrimToMaterials))
+	{
+		for (TPair<FString, TObjectPtr<UStaticMesh>>& Pair : RetryPrimToMesh)
+		{
+			if (!Pair.Key.IsEmpty() && Pair.Value)
+			{
+				PrimToMesh.FindOrAdd(Pair.Key) = Pair.Value;
+			}
+		}
+
+		for (TPair<FString, TArray<TObjectPtr<UMaterialInterface>>>& Pair : RetryPrimToMaterials)
+		{
+			if (Pair.Key.IsEmpty())
+			{
+				continue;
+			}
+
+			TArray<TObjectPtr<UMaterialInterface>>& ExistingMaterials = PrimToMaterials.FindOrAdd(Pair.Key);
+			for (UMaterialInterface* Material : Pair.Value)
+			{
+				ExistingMaterials.AddUnique(Material);
+			}
+		}
+
+		BuildPlan.bUsedRetryImport = true;
+		ApplyImportedAssetsToPrimNodes(PrimNodes, PrimToMesh, PrimToMaterials);
+	}
 #endif
 }
 
@@ -1631,7 +1645,59 @@ void AUsdHierarchicalBuildActor::StartBuildFromPreparedPrimNodes(
 		return GetPrimDepth(A.PrimPath) < GetPrimDepth(B.PrimPath);
 	});
 
-	PendingBuildPrimNodes = MoveTemp(PrimNodes);
+	TMap<FString, FString> ParentPrimPathByPrimPath;
+	ParentPrimPathByPrimPath.Reserve(PrimNodes.Num());
+	for (const FPrimNodeBuildData& PrimNode : PrimNodes)
+	{
+		if (!PrimNode.PrimPath.IsEmpty())
+		{
+			ParentPrimPathByPrimPath.Add(PrimNode.PrimPath, PrimNode.ParentPrimPath);
+		}
+	}
+
+	TSet<FString> SupportedPrimPaths;
+	SupportedPrimPaths.Reserve(PrimNodes.Num());
+	TArray<FPrimNodeBuildData> SupportedPrimNodes;
+	SupportedPrimNodes.Reserve(PrimNodes.Num());
+	int32 FilteredUnsupportedPrimCount = 0;
+
+	for (FPrimNodeBuildData& PrimNode : PrimNodes)
+	{
+		if (!UsdCarFactoryPipelineBuild::IsSupportedProxyPrimType(PrimNode.PrimTypeName, PrimNode.bIsStaticMesh))
+		{
+			++FilteredUnsupportedPrimCount;
+			continue;
+		}
+
+		FString ResolvedParentPrimPath = PrimNode.ParentPrimPath;
+		while (!ResolvedParentPrimPath.IsEmpty() && !SupportedPrimPaths.Contains(ResolvedParentPrimPath))
+		{
+			const FString* ParentOfCurrentParent = ParentPrimPathByPrimPath.Find(ResolvedParentPrimPath);
+			if (!ParentOfCurrentParent || *ParentOfCurrentParent == ResolvedParentPrimPath)
+			{
+				ResolvedParentPrimPath.Reset();
+				break;
+			}
+
+			ResolvedParentPrimPath = *ParentOfCurrentParent;
+		}
+
+		PrimNode.ParentPrimPath = ResolvedParentPrimPath;
+		SupportedPrimPaths.Add(PrimNode.PrimPath);
+		SupportedPrimNodes.Add(MoveTemp(PrimNode));
+	}
+
+	if (FilteredUnsupportedPrimCount > 0)
+	{
+		UE_LOG(
+			LogUsdCarFactoryPipelineBuild,
+			Log,
+			TEXT("Filtered %d unsupported prim nodes. Only mesh/xform prim types will generate proxy actors."),
+			FilteredUnsupportedPrimCount
+		);
+	}
+
+	PendingBuildPrimNodes = MoveTemp(SupportedPrimNodes);
 
 	if (!bUseExistingRequestId)
 	{
@@ -1710,715 +1776,10 @@ void AUsdHierarchicalBuildActor::StartBuildFromPreparedPrimNodes(
 
 void AUsdHierarchicalBuildActor::ResetPendingSourceRefreshState()
 {
-	PendingSourceBuildAsset = nullptr;
-	PendingSourcePrimNodes.Reset();
-	PendingSelectiveImportPrimPaths.Reset();
-	PendingSelectivePrimToMesh.Reset();
-	PendingSelectivePrimToMaterials.Reset();
-	PendingSourceUsdPath.Reset();
-	PendingSourceUsdTimestampUtc = FDateTime();
-	PendingSourceUsdFileSizeBytes = -1;
-	PendingSourceRequestId = 0;
-	PendingSelectiveImportIndex = 0;
-	PendingSelectiveImportBatchCount = 0;
-	bPendingSourceRefreshFromUsd = false;
-	bPendingSelectiveImportFallbackToFullImport = false;
-	PendingDeltaAddedCount = 0;
-	PendingDeltaRemovedCount = 0;
-	PendingDeltaChangedMeshCount = 0;
-	PendingDeltaChangedXformCount = 0;
-}
-
-void AUsdHierarchicalBuildActor::SaveCurrentCacheAsMaterialVariant()
-{
-#if WITH_EDITOR
-	UCarGeneratedAssemblyDataAsset* BuildAsset = ResolveOrCreateGeneratedDataAsset();
-	if (!BuildAsset)
+	if (UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem())
 	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve or create GeneratedDataAsset."));
-		return;
+		BuildSubsystem->GetJobState(*this).ResetSourceRefreshState();
 	}
-
-	UCarUsdVariantDataAsset* VariantAsset = ResolveOrCreateVariantDataAsset();
-	if (!VariantAsset)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to resolve or create VariantDataAsset."));
-		return;
-	}
-
-	EnsureLegacyPartsMigrated(BuildAsset, VariantAsset);
-
-	FName TargetVariantName = SaveVariantName.IsNone() ? VariantAsset->ActiveVariantName : SaveVariantName;
-	if (TargetVariantName.IsNone())
-	{
-		TargetVariantName = FName(TEXT("Default"));
-		VariantAsset->Modify();
-		VariantAsset->ActiveVariantName = TargetVariantName;
-		this->ActiveVariantName = TargetVariantName;
-	}
-
-	VariantAsset->Modify();
-
-	TArray<AActor*> DuplicateAttachedProxyActors;
-	const TMap<FString, AActor*> AttachedProxyActors = GatherAttachedProxyActors(DuplicateAttachedProxyActors);
-
-	TArray<FString> PrimPaths;
-	AttachedProxyActors.GetKeys(PrimPaths);
-	PrimPaths.Sort();
-
-	FCarUsdVariantRecord NewVariantRecord;
-	NewVariantRecord.VariantName = TargetVariantName;
-	NewVariantRecord.SourceUsdPath = SourceUsdFile.FilePath;
-	NewVariantRecord.SavedAtUtc = FDateTime::UtcNow();
-	NewVariantRecord.ProxyActorStates.Reserve(PrimPaths.Num());
-
-	auto ResolvePrimaryPrimitiveComponent = [](AActor* Actor) -> UPrimitiveComponent*
-	{
-		if (!Actor)
-		{
-			return nullptr;
-		}
-
-		if (UPrimitiveComponent* PrimitiveRoot = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
-		{
-			return PrimitiveRoot;
-		}
-
-		return Actor->FindComponentByClass<UPrimitiveComponent>();
-	};
-
-	for (const FString& PrimPath : PrimPaths)
-	{
-		AActor* ProxyActor = AttachedProxyActors.FindRef(PrimPath);
-		if (!IsValid(ProxyActor))
-		{
-			continue;
-		}
-
-		FCarUsdProxyActorState ProxyRecord;
-		ProxyRecord.PrimPath = PrimPath;
-		ProxyRecord.ProxyActorPath = ProxyActor->GetPathName();
-		ProxyRecord.bActorHiddenInGame = ProxyActor->IsHidden();
-
-		if (USceneComponent* ProxyRootComponent = ProxyActor->GetRootComponent())
-		{
-			ProxyRecord.RelativeTransform = ProxyRootComponent->GetRelativeTransform();
-			ProxyRecord.Mobility = ProxyRootComponent->Mobility;
-		}
-
-		if (UPrimitiveComponent* PrimitiveComponent = ResolvePrimaryPrimitiveComponent(ProxyActor))
-		{
-			ProxyRecord.CollisionEnabled = PrimitiveComponent->GetCollisionEnabled();
-			ProxyRecord.bComponentVisible = PrimitiveComponent->IsVisible();
-			ProxyRecord.bCastShadow = PrimitiveComponent->CastShadow;
-		}
-
-		if (AStaticMeshActor* StaticMeshActor = Cast<AStaticMeshActor>(ProxyActor))
-		{
-			if (UStaticMeshComponent* StaticMeshComponent = StaticMeshActor->GetStaticMeshComponent())
-			{
-				ProxyRecord.bIsStaticMeshActor = true;
-				ProxyRecord.StaticMesh = StaticMeshComponent->GetStaticMesh();
-				ProxyRecord.Mobility = StaticMeshComponent->Mobility;
-				ProxyRecord.CollisionEnabled = StaticMeshComponent->GetCollisionEnabled();
-				ProxyRecord.bComponentVisible = StaticMeshComponent->IsVisible();
-				ProxyRecord.bCastShadow = StaticMeshComponent->CastShadow;
-
-				// Save materials with slot names for mesh-change resilience
-				if (UStaticMesh* StaticMesh = StaticMeshComponent->GetStaticMesh())
-				{
-					const TArray<FStaticMaterial>& StaticMats = StaticMesh->GetStaticMaterials();
-					const int32 NumSlots = FMath::Min(StaticMats.Num(), StaticMeshComponent->GetNumMaterials());
-					ProxyRecord.MaterialSlotNames.Reserve(NumSlots);
-					ProxyRecord.Materials.Reserve(NumSlots);
-					for (int32 SlotIndex = 0; SlotIndex < NumSlots; ++SlotIndex)
-					{
-						const FName SlotName = StaticMats[SlotIndex].MaterialSlotName;
-						ProxyRecord.MaterialSlotNames.Add(SlotName);
-						UMaterialInterface* Material = StaticMeshComponent->GetMaterial(SlotIndex);
-						ProxyRecord.Materials.Add(Material);
-						if (Material)
-						{
-							ProxyRecord.MaterialOverrides.Add(SlotName, Material);
-						}
-					}
-				}
-				else
-				{
-					// Fallback: no static mesh, save by index only
-					const int32 NumSlots = StaticMeshComponent->GetNumMaterials();
-					ProxyRecord.Materials.Reserve(NumSlots);
-					for (int32 SlotIndex = 0; SlotIndex < NumSlots; ++SlotIndex)
-					{
-						ProxyRecord.Materials.Add(StaticMeshComponent->GetMaterial(SlotIndex));
-					}
-				}
-
-				ProxyRecord.bRenderCustomDepth = StaticMeshComponent->bRenderCustomDepth;
-				ProxyRecord.CustomDepthStencilValue = StaticMeshComponent->CustomDepthStencilValue;
-				ProxyRecord.TranslucencySortPriority = StaticMeshComponent->TranslucencySortPriority;
-				ProxyRecord.bVisibleInReflectionCaptures = StaticMeshComponent->bVisibleInReflectionCaptures;
-				ProxyRecord.bCastHiddenShadow = StaticMeshComponent->bCastHiddenShadow;
-				ProxyRecord.LightingChannels = StaticMeshComponent->LightingChannels;
-				ProxyRecord.RuntimeVirtualTextures = StaticMeshComponent->RuntimeVirtualTextures;
-				ProxyRecord.VirtualTextureRenderPassType = static_cast<uint8>(StaticMeshComponent->VirtualTextureRenderPassType);
-			}
-		}
-
-		NewVariantRecord.ProxyActorStates.Add(MoveTemp(ProxyRecord));
-	}
-
-	if (FCarUsdVariantRecord* ExistingVariant = FindMutableVariantRecord(VariantAsset, TargetVariantName))
-	{
-		*ExistingVariant = MoveTemp(NewVariantRecord);
-	}
-	else
-	{
-		VariantAsset->Variants.Add(MoveTemp(NewVariantRecord));
-	}
-
-	VariantAsset->ActiveVariantName = TargetVariantName;
-	this->ActiveVariantName = TargetVariantName;
-	VariantAsset->MarkPackageDirty();
-
-	UE_LOG(
-		LogUsdCarFactoryPipelineBuild,
-		Log,
-		TEXT("Saved material variant '%s'. Prim records: %d, duplicate attached actors detected: %d"),
-		*TargetVariantName.ToString(),
-		PrimPaths.Num(),
-		DuplicateAttachedProxyActors.Num()
-	);
-#else
-	UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("SaveCurrentCacheAsMaterialVariant can only run in editor."));
-#endif
-}
-
-void AUsdHierarchicalBuildActor::ApplyActiveVariant()
-{
-#if WITH_EDITOR
-	UCarUsdVariantDataAsset* VariantAsset = VariantDataAsset;
-	if (!VariantAsset)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("VariantDataAsset is null. Skip ApplyActiveVariant."));
-		return;
-	}
-
-	FName TargetVariantName = VariantAsset->ActiveVariantName;
-	if (TargetVariantName.IsNone())
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("ActiveVariantName is empty on VariantDataAsset."));
-		return;
-	}
-
-	const FCarUsdVariantRecord* ActiveVariant = FindVariantRecord(VariantAsset, TargetVariantName);
-	if (!ActiveVariant)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("Active variant '%s' not found."), *TargetVariantName.ToString());
-		return;
-	}
-
-	TArray<AActor*> DuplicateAttachedProxyActors;
-	const TMap<FString, AActor*> AttachedProxyActors = GatherAttachedProxyActors(DuplicateAttachedProxyActors);
-	for (AActor* DuplicateActor : DuplicateAttachedProxyActors)
-	{
-		if (IsValid(DuplicateActor) && DuplicateActor != this)
-		{
-			DuplicateActor->Destroy();
-		}
-	}
-
-	int32 AppliedCount = 0;
-	for (const FCarUsdProxyActorState& ProxyVariant : ActiveVariant->ProxyActorStates)
-	{
-		AActor* ProxyActor = AttachedProxyActors.FindRef(ProxyVariant.PrimPath);
-		if (!ProxyActor)
-		{
-			ProxyActor = ResolveProxyActorByObjectPath(ProxyVariant.ProxyActorPath);
-		}
-		if (!IsValid(ProxyActor))
-		{
-			continue;
-		}
-
-		ApplyVariantToProxyActor(ProxyVariant, ProxyActor);
-		++AppliedCount;
-	}
-
-	UE_LOG(
-		LogUsdCarFactoryPipelineBuild,
-		Log,
-		TEXT("Applied active variant '%s' to %d proxy actors."),
-		*TargetVariantName.ToString(),
-		AppliedCount
-	);
-#else
-	UE_LOG(LogUsdCarFactoryPipelineBuild, Warning, TEXT("ApplyActiveVariant can only run in editor."));
-#endif
-}
-
-void AUsdHierarchicalBuildActor::EnsureLegacyPartsMigrated(
-	UCarGeneratedAssemblyDataAsset* BuildAsset,
-	UCarUsdVariantDataAsset* VariantAsset
-)
-{
-#if WITH_EDITOR
-	if (!BuildAsset || !VariantAsset || BuildAsset->bHasAutoMigratedLegacyPartsToVariants)
-	{
-		return;
-	}
-
-	if (!VariantAsset->Variants.IsEmpty())
-	{
-		BuildAsset->Modify();
-		BuildAsset->bHasAutoMigratedLegacyPartsToVariants = true;
-		BuildAsset->MarkPackageDirty();
-		return;
-	}
-
-	VariantAsset->Modify();
-
-	// Migrate legacy variant records first if any were previously stored on GeneratedDataAsset.
-	for (const FCarGeneratedMaterialVariantRecord& LegacyVariant : BuildAsset->MaterialVariants)
-	{
-		FCarUsdVariantRecord NewVariant;
-		NewVariant.VariantName = LegacyVariant.VariantName;
-		NewVariant.SourceUsdPath = LegacyVariant.SourceUsdPath;
-		NewVariant.SavedAtUtc = LegacyVariant.SavedAtUtc;
-		NewVariant.ProxyActorStates.Reserve(LegacyVariant.ProxyActorConfigs.Num());
-
-		for (const FCarGeneratedProxyActorVariantRecord& LegacyState : LegacyVariant.ProxyActorConfigs)
-		{
-			FCarUsdProxyActorState NewState;
-			NewState.PrimPath = LegacyState.PrimPath;
-			NewState.RelativeTransform = LegacyState.RelativeTransform;
-			NewState.bIsStaticMeshActor = LegacyState.bIsStaticMeshActor;
-			NewState.bActorHiddenInGame = LegacyState.bActorHiddenInGame;
-			NewState.Mobility = LegacyState.Mobility;
-			NewState.CollisionEnabled = LegacyState.CollisionEnabled;
-			NewState.bComponentVisible = LegacyState.bComponentVisible;
-			NewState.bCastShadow = LegacyState.bCastShadow;
-			NewState.bRenderCustomDepth = LegacyState.bRenderCustomDepth;
-			NewState.CustomDepthStencilValue = LegacyState.CustomDepthStencilValue;
-			NewState.TranslucencySortPriority = LegacyState.TranslucencySortPriority;
-			NewState.bVisibleInReflectionCaptures = LegacyState.bVisibleInReflectionCaptures;
-			NewState.bCastHiddenShadow = LegacyState.bCastHiddenShadow;
-			NewState.LightingChannels = LegacyState.LightingChannels;
-			NewState.RuntimeVirtualTextures = LegacyState.RuntimeVirtualTextures;
-			NewState.VirtualTextureRenderPassType = static_cast<uint8>(LegacyState.VirtualTextureRenderPassType);
-			NewState.StaticMesh = LegacyState.StaticMesh;
-			NewState.Materials = LegacyState.Materials;
-			NewState.ProxyActorPath = LegacyState.ProxyActorPath;
-			NewVariant.ProxyActorStates.Add(MoveTemp(NewState));
-		}
-
-		if (NewVariant.VariantName.IsNone())
-		{
-			NewVariant.VariantName = FName(TEXT("Default"));
-		}
-		VariantAsset->Variants.Add(MoveTemp(NewVariant));
-	}
-
-	if (VariantAsset->Variants.IsEmpty() && BuildAsset->Parts.IsEmpty())
-	{
-		return;
-	}
-
-	if (VariantAsset->Variants.IsEmpty())
-	{
-		const FName MigratedVariantName = BuildAsset->ActiveVariantName.IsNone() ? FName(TEXT("Default")) : BuildAsset->ActiveVariantName;
-
-		FCarUsdVariantRecord MigratedVariant;
-		MigratedVariant.VariantName = MigratedVariantName;
-		MigratedVariant.SourceUsdPath = BuildAsset->SourceUsdFile.FilePath;
-		MigratedVariant.SavedAtUtc = FDateTime::UtcNow();
-		MigratedVariant.ProxyActorStates.Reserve(BuildAsset->Parts.Num());
-
-		for (const FCarGeneratedPartRecord& PartRecord : BuildAsset->Parts)
-		{
-			FCarUsdProxyActorState ProxyVariant;
-			ProxyVariant.PrimPath = PartRecord.PrimPath;
-			ProxyVariant.RelativeTransform = PartRecord.RelativeTransform;
-			ProxyVariant.bIsStaticMeshActor = true;
-			ProxyVariant.StaticMesh = PartRecord.StaticMesh;
-			ProxyVariant.Materials = PartRecord.Materials;
-			ProxyVariant.ProxyActorPath = PartRecord.ProxyActorPath;
-			MigratedVariant.ProxyActorStates.Add(MoveTemp(ProxyVariant));
-		}
-
-		VariantAsset->Variants.Add(MoveTemp(MigratedVariant));
-	}
-
-	VariantAsset->ActiveVariantName =
-		BuildAsset->ActiveVariantName.IsNone() ? VariantAsset->Variants[0].VariantName : BuildAsset->ActiveVariantName;
-	VariantAsset->MarkPackageDirty();
-
-	BuildAsset->Modify();
-	BuildAsset->bHasAutoMigratedLegacyPartsToVariants = true;
-	BuildAsset->MarkPackageDirty();
-
-	BindVariantDataAssetEvents();
-
-	UE_LOG(
-		LogUsdCarFactoryPipelineBuild,
-		Log,
-		TEXT("Auto-migrated legacy variant data. Variant count: %d"),
-		VariantAsset->Variants.Num()
-	);
-#endif
-}
-
-const FCarUsdVariantRecord* AUsdHierarchicalBuildActor::FindVariantRecord(
-	const UCarUsdVariantDataAsset* VariantAsset,
-	const FName& VariantName
-) const
-{
-	if (!VariantAsset || VariantName.IsNone())
-	{
-		return nullptr;
-	}
-
-	return VariantAsset->Variants.FindByPredicate(
-		[&VariantName](const FCarUsdVariantRecord& Variant)
-		{
-			return Variant.VariantName == VariantName;
-		}
-	);
-}
-
-FCarUsdVariantRecord* AUsdHierarchicalBuildActor::FindMutableVariantRecord(
-	UCarUsdVariantDataAsset* VariantAsset,
-	const FName& VariantName
-) const
-{
-	if (!VariantAsset || VariantName.IsNone())
-	{
-		return nullptr;
-	}
-
-	return VariantAsset->Variants.FindByPredicate(
-		[&VariantName](const FCarUsdVariantRecord& Variant)
-		{
-			return Variant.VariantName == VariantName;
-		}
-	);
-}
-
-void AUsdHierarchicalBuildActor::ApplyVariantToProxyActor(
-	const FCarUsdProxyActorState& VariantRecord,
-	AActor* ProxyActor
-) const
-{
-	if (!ProxyActor)
-	{
-		return;
-	}
-
-	if (USceneComponent* ProxyRoot = ProxyActor->GetRootComponent())
-	{
-		ProxyRoot->SetRelativeTransform(VariantRecord.RelativeTransform);
-		ProxyRoot->SetMobility(VariantRecord.Mobility);
-	}
-
-	ProxyActor->SetActorHiddenInGame(VariantRecord.bActorHiddenInGame);
-
-	AStaticMeshActor* StaticMeshActor = Cast<AStaticMeshActor>(ProxyActor);
-	UStaticMeshComponent* StaticMeshComponent = StaticMeshActor ? StaticMeshActor->GetStaticMeshComponent() : nullptr;
-	if (!StaticMeshComponent)
-	{
-		return;
-	}
-
-	StaticMeshComponent->SetMobility(VariantRecord.Mobility);
-	StaticMeshComponent->SetCollisionEnabled(VariantRecord.CollisionEnabled);
-	StaticMeshComponent->SetVisibility(VariantRecord.bComponentVisible, true);
-	StaticMeshComponent->SetCastShadow(VariantRecord.bCastShadow);
-	StaticMeshComponent->SetRenderCustomDepth(VariantRecord.bRenderCustomDepth);
-	StaticMeshComponent->SetCustomDepthStencilValue(VariantRecord.CustomDepthStencilValue);
-	StaticMeshComponent->SetCastHiddenShadow(VariantRecord.bCastHiddenShadow);
-	StaticMeshComponent->SetLightingChannels(
-		VariantRecord.LightingChannels.bChannel0,
-		VariantRecord.LightingChannels.bChannel1,
-		VariantRecord.LightingChannels.bChannel2
-	);
-
-	StaticMeshComponent->TranslucencySortPriority = VariantRecord.TranslucencySortPriority;
-	StaticMeshComponent->bVisibleInReflectionCaptures = VariantRecord.bVisibleInReflectionCaptures;
-	StaticMeshComponent->RuntimeVirtualTextures = VariantRecord.RuntimeVirtualTextures;
-	StaticMeshComponent->VirtualTextureRenderPassType = static_cast<ERuntimeVirtualTextureMainPassType>(VariantRecord.VirtualTextureRenderPassType);
-
-	StaticMeshComponent->SetStaticMesh(VariantRecord.StaticMesh);
-
-	// Apply materials by slot name (survives mesh topology changes)
-	if (UStaticMesh* StaticMesh = StaticMeshComponent->GetStaticMesh())
-	{
-		const TArray<FStaticMaterial>& StaticMats = StaticMesh->GetStaticMaterials();
-		for (int32 SlotIndex = 0; SlotIndex < StaticMats.Num(); ++SlotIndex)
-		{
-			const FName SlotName = StaticMats[SlotIndex].MaterialSlotName;
-			UMaterialInterface* MaterialToApply = nullptr;
-
-			// Priority 1: MaterialOverrides map (new system)
-			if (TObjectPtr<UMaterialInterface> const* Found = VariantRecord.MaterialOverrides.Find(SlotName))
-			{
-				MaterialToApply = Found->Get();
-			}
-			// Priority 2: Match by saved slot name index (for migrated data)
-			else if (VariantRecord.MaterialSlotNames.IsValidIndex(SlotIndex) && VariantRecord.Materials.IsValidIndex(SlotIndex))
-			{
-				// Try to find matching slot name in saved data
-				for (int32 SavedIndex = 0; SavedIndex < VariantRecord.MaterialSlotNames.Num(); ++SavedIndex)
-				{
-					if (VariantRecord.MaterialSlotNames[SavedIndex] == SlotName && VariantRecord.Materials.IsValidIndex(SavedIndex))
-					{
-						MaterialToApply = VariantRecord.Materials[SavedIndex];
-						break;
-					}
-				}
-			}
-
-			if (MaterialToApply)
-			{
-				StaticMeshComponent->SetMaterial(SlotIndex, MaterialToApply);
-			}
-		}
-	}
-	else
-	{
-		// Fallback: legacy indexed material application
-		for (int32 SlotIndex = 0; SlotIndex < VariantRecord.Materials.Num(); ++SlotIndex)
-		{
-			if (SlotIndex < StaticMeshComponent->GetNumMaterials())
-			{
-				StaticMeshComponent->SetMaterial(SlotIndex, VariantRecord.Materials[SlotIndex]);
-			}
-		}
-	}
-
-	StaticMeshComponent->MarkRenderStateDirty();
-}
-
-UCarGeneratedAssemblyDataAsset* AUsdHierarchicalBuildActor::ResolveOrCreateGeneratedDataAsset()
-{
-#if WITH_EDITOR
-	auto EnsureUsdAssetCache = [this](UCarGeneratedAssemblyDataAsset* InBuildAsset)
-	{
-		if (!InBuildAsset)
-		{
-			return;
-		}
-
-		bool bUpdated = false;
-		if (UsdAssetCacheReference && InBuildAsset->UsdAssetCache != UsdAssetCacheReference)
-		{
-			InBuildAsset->Modify();
-			InBuildAsset->UsdAssetCache = UsdAssetCacheReference;
-			bUpdated = true;
-		}
-
-		if (!InBuildAsset->UsdAssetCache)
-		{
-			if (!bUpdated)
-			{
-				InBuildAsset->Modify();
-			}
-			InBuildAsset->UsdAssetCache = NewObject<UUsdAssetCache3>(
-				InBuildAsset,
-				UUsdAssetCache3::StaticClass(),
-				NAME_None,
-				RF_Transactional
-			);
-			bUpdated = true;
-		}
-
-		if (bUpdated)
-		{
-			InBuildAsset->MarkPackageDirty();
-		}
-
-		UsdAssetCacheReference = InBuildAsset->UsdAssetCache;
-	};
-
-	if (GeneratedDataAsset)
-	{
-		EnsureUsdAssetCache(GeneratedDataAsset);
-		return GeneratedDataAsset;
-	}
-
-	// 按 USD 源文件名隔离存储路径
-	const FString NormalizedSourceUsdPath = FPaths::ConvertRelativePathToFull(SourceUsdFile.FilePath);
-	const FString SourceIdentifier = UsdCarFactoryPipelineBuild::ExtractSourceIdentifier(NormalizedSourceUsdPath);
-	const FString AssetFolderPath = FString::Printf(TEXT("%s/%s"),
-		UsdCarFactoryPipelineBuild::GeneratedAssetFolder, *SourceIdentifier);
-	if (!FPackageName::IsValidLongPackageName(AssetFolderPath))
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Invalid generated asset folder: %s"), *AssetFolderPath);
-		return nullptr;
-	}
-
-	const FString PackagePath = FString::Printf(TEXT("%s/%s"), *AssetFolderPath, UsdCarFactoryPipelineBuild::GeneratedAssetBaseName);
-	const FString ObjectPath = FString::Printf(
-		TEXT("%s.%s"),
-		*PackagePath,
-		UsdCarFactoryPipelineBuild::GeneratedAssetBaseName
-	);
-
-	if (UCarGeneratedAssemblyDataAsset* ExistingAsset =
-			LoadObject<UCarGeneratedAssemblyDataAsset>(nullptr, *ObjectPath))
-	{
-		GeneratedDataAsset = ExistingAsset;
-		EnsureUsdAssetCache(GeneratedDataAsset);
-		return GeneratedDataAsset;
-	}
-
-	UPackage* Package = CreatePackage(*PackagePath);
-	if (!Package)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to create package: %s"), *PackagePath);
-		return nullptr;
-	}
-
-	GeneratedDataAsset = NewObject<UCarGeneratedAssemblyDataAsset>(
-		Package,
-		UCarGeneratedAssemblyDataAsset::StaticClass(),
-		*FString(UsdCarFactoryPipelineBuild::GeneratedAssetBaseName),
-		RF_Public | RF_Standalone | RF_Transactional
-	);
-
-	if (!GeneratedDataAsset)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to create GeneratedDataAsset object."));
-		return nullptr;
-	}
-
-	FAssetRegistryModule::AssetCreated(GeneratedDataAsset);
-	EnsureUsdAssetCache(GeneratedDataAsset);
-	GeneratedDataAsset->MarkPackageDirty();
-	Package->MarkPackageDirty();
-
-	return GeneratedDataAsset;
-#else
-	return nullptr;
-#endif
-}
-
-UCarUsdVariantDataAsset* AUsdHierarchicalBuildActor::ResolveOrCreateVariantDataAsset()
-{
-#if WITH_EDITOR
-	if (VariantDataAsset)
-	{
-		return VariantDataAsset;
-	}
-
-	// 按 USD 源文件名隔离存储路径
-	const FString NormalizedSourceUsdPath = FPaths::ConvertRelativePathToFull(SourceUsdFile.FilePath);
-	const FString SourceIdentifier = UsdCarFactoryPipelineBuild::ExtractSourceIdentifier(NormalizedSourceUsdPath);
-	const FString AssetFolderPath = FString::Printf(TEXT("%s/%s"),
-		UsdCarFactoryPipelineBuild::VariantAssetFolder, *SourceIdentifier);
-	if (!FPackageName::IsValidLongPackageName(AssetFolderPath))
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Invalid variant asset folder: %s"), *AssetFolderPath);
-		return nullptr;
-	}
-
-	const FString PackagePath =
-		FString::Printf(TEXT("%s/%s"), *AssetFolderPath, UsdCarFactoryPipelineBuild::VariantAssetBaseName);
-	const FString ObjectPath = FString::Printf(
-		TEXT("%s.%s"),
-		*PackagePath,
-		UsdCarFactoryPipelineBuild::VariantAssetBaseName
-	);
-
-	if (UCarUsdVariantDataAsset* ExistingAsset = LoadObject<UCarUsdVariantDataAsset>(nullptr, *ObjectPath))
-	{
-		VariantDataAsset = ExistingAsset;
-		BindVariantDataAssetEvents();
-		return VariantDataAsset;
-	}
-
-	UPackage* Package = CreatePackage(*PackagePath);
-	if (!Package)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to create variant package: %s"), *PackagePath);
-		return nullptr;
-	}
-
-	VariantDataAsset = NewObject<UCarUsdVariantDataAsset>(
-		Package,
-		UCarUsdVariantDataAsset::StaticClass(),
-		*FString(UsdCarFactoryPipelineBuild::VariantAssetBaseName),
-		RF_Public | RF_Standalone | RF_Transactional
-	);
-
-	if (!VariantDataAsset)
-	{
-		UE_LOG(LogUsdCarFactoryPipelineBuild, Error, TEXT("Failed to create VariantDataAsset object."));
-		return nullptr;
-	}
-
-	FAssetRegistryModule::AssetCreated(VariantDataAsset);
-	VariantDataAsset->MarkPackageDirty();
-	Package->MarkPackageDirty();
-
-	BindVariantDataAssetEvents();
-	return VariantDataAsset;
-#else
-	return nullptr;
-#endif
-}
-
-void AUsdHierarchicalBuildActor::BindVariantDataAssetEvents()
-{
-#if WITH_EDITOR
-	if (BoundVariantDataAsset.Get() == VariantDataAsset && VariantDataAssetChangedHandle.IsValid())
-	{
-		return;
-	}
-
-	UnbindVariantDataAssetEvents();
-
-	if (!VariantDataAsset)
-	{
-		return;
-	}
-
-	VariantDataAsset->OnActiveVariantChanged.AddDynamic(this, &AUsdHierarchicalBuildActor::HandleVariantDataAssetActiveVariantChanged);
-	BoundVariantDataAsset = VariantDataAsset;
-	ActiveVariantName = VariantDataAsset->ActiveVariantName;
-#endif
-}
-
-void AUsdHierarchicalBuildActor::UnbindVariantDataAssetEvents()
-{
-#if WITH_EDITOR
-	if (BoundVariantDataAsset.IsValid())
-	{
-		BoundVariantDataAsset->OnActiveVariantChanged.RemoveAll(this);
-	}
-
-	BoundVariantDataAsset.Reset();
-#endif
-}
-
-void AUsdHierarchicalBuildActor::HandleVariantDataAssetActiveVariantChanged(UCarUsdVariantDataAsset* ChangedAsset)
-{
-#if WITH_EDITOR
-	if (ChangedAsset && ChangedAsset == VariantDataAsset && !bIsBuildInProgress)
-	{
-		ActiveVariantName = ChangedAsset->ActiveVariantName;
-		ApplyActiveVariant();
-	}
-#endif
-}
-
-TArray<FName> AUsdHierarchicalBuildActor::GetActiveVariantNameOptions() const
-{
-	if (VariantDataAsset)
-	{
-		return VariantDataAsset->GetVariantNameOptions();
-	}
-
-	return TArray<FName>();
 }
 
 bool AUsdHierarchicalBuildActor::ShouldRefreshCacheFromSourceUsd(
@@ -2808,10 +2169,11 @@ void AUsdHierarchicalBuildActor::CollectPrimNodeDataFromGeneratedAsset(
 		FPrimNodeBuildData Data;
 		Data.PrimPath = Record.PrimPath;
 		Data.ParentPrimPath = Record.ParentPrimPath;
-		Data.PrimTypeName = Record.StaticMesh ? TEXT("mesh") : TEXT("xform");
+		const bool bRecordIsStaticMesh = Record.bIsStaticMesh || (Record.StaticMesh != nullptr);
+		Data.PrimTypeName = bRecordIsStaticMesh ? TEXT("mesh") : TEXT("xform");
 		Data.RelativeTransform = Record.RelativeTransform;
 		Data.WorldTransform = Record.RelativeTransform;
-		Data.bIsStaticMesh = (Record.StaticMesh != nullptr);
+		Data.bIsStaticMesh = bRecordIsStaticMesh;
 		Data.MeshContentHash = Record.MeshContentHash;
 		Data.StaticMesh = Record.StaticMesh;
 
@@ -2981,17 +2343,25 @@ void AUsdHierarchicalBuildActor::BeginAsyncDiffPreparation(
 )
 {
 #if WITH_EDITOR
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
 	ResetPendingDiffState();
 
-	PendingDiffBuildAsset = BuildAsset;
-	PendingDiffRequestId = ActiveBuildRequestId;
-	PendingDiffAttachedProxyActors = MoveTemp(AttachedProxyActors);
-	PendingDiffAttachedProxyActors.GetKeys(PendingDiffAttachedPrimPaths);
-	PendingDiffTargetSnapshots.Reserve(PendingBuildPrimNodes.Num());
-	PendingDiffExistingSnapshots.Reserve(PendingDiffAttachedPrimPaths.Num());
-	PendingDiffPrimIndex = 0;
-	PendingDiffAttachedIndex = 0;
-	bPendingDiffRefreshedFromSourceUsd = bRefreshedFromSourceUsd;
+	JobState.Phase = UsdCarFactoryPipelineBuild::EUsdProxyBuildJobPhase::Diffing;
+	JobState.PendingBuildPlan.BuildAsset = BuildAsset;
+	JobState.PendingBuildPlan.bRefreshedFromSourceUsd = bRefreshedFromSourceUsd;
+	JobState.PendingBuildPlan.RequestId = ActiveBuildRequestId;
+	JobState.PendingDiffAttachedProxyActors = MoveTemp(AttachedProxyActors);
+	JobState.PendingDiffAttachedProxyActors.GetKeys(JobState.PendingDiffAttachedPrimPaths);
+	JobState.PendingDiffTargetSnapshots.Reserve(PendingBuildPrimNodes.Num());
+	JobState.PendingDiffExistingSnapshots.Reserve(JobState.PendingDiffAttachedPrimPaths.Num());
+	JobState.PendingDiffPrimIndex = 0;
+	JobState.PendingDiffAttachedIndex = 0;
 
 	UsdCarFactoryPipelineBuild::ScheduleActorContinuation(
 		TWeakObjectPtr<AUsdHierarchicalBuildActor>(this),
@@ -3003,7 +2373,14 @@ void AUsdHierarchicalBuildActor::BeginAsyncDiffPreparation(
 void AUsdHierarchicalBuildActor::ProcessDiffPreparationBatch()
 {
 #if WITH_EDITOR
-	if (!bIsBuildInProgress || PendingDiffRequestId != ActiveBuildRequestId || !PendingDiffBuildAsset)
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	if (!bIsBuildInProgress || JobState.PendingBuildPlan.RequestId != ActiveBuildRequestId || !JobState.PendingBuildPlan.BuildAsset)
 	{
 		ResetPendingDiffState();
 		return;
@@ -3016,33 +2393,34 @@ void AUsdHierarchicalBuildActor::ProcessDiffPreparationBatch()
 
 	int32 ProcessedCount = 0;
 	while (
-		PendingDiffPrimIndex < PendingBuildPrimNodes.Num()
+		JobState.PendingDiffPrimIndex < PendingBuildPrimNodes.Num()
 		&& ProcessedCount < DiffBatchSize
 		&& (FPlatformTime::Seconds() - BatchStartSeconds) < TimeBudgetSeconds
 	)
 	{
-		PendingDiffTargetSnapshots.Add(BuildTargetSnapshotForDiff(PendingBuildPrimNodes[PendingDiffPrimIndex]));
-		++PendingDiffPrimIndex;
+		JobState.PendingDiffTargetSnapshots.Add(BuildTargetSnapshotForDiff(PendingBuildPrimNodes[JobState.PendingDiffPrimIndex]));
+		++JobState.PendingDiffPrimIndex;
 		++ProcessedCount;
 	}
 
 	while (
-		PendingDiffAttachedIndex < PendingDiffAttachedPrimPaths.Num()
+		JobState.PendingDiffAttachedIndex < JobState.PendingDiffAttachedPrimPaths.Num()
 		&& ProcessedCount < DiffBatchSize
 		&& (FPlatformTime::Seconds() - BatchStartSeconds) < TimeBudgetSeconds
 	)
 	{
-		const FString& PrimPath = PendingDiffAttachedPrimPaths[PendingDiffAttachedIndex];
-		if (AActor* ExistingActor = PendingDiffAttachedProxyActors.FindRef(PrimPath); IsValid(ExistingActor))
+		const FString& PrimPath = JobState.PendingDiffAttachedPrimPaths[JobState.PendingDiffAttachedIndex];
+		if (AActor* ExistingActor = JobState.PendingDiffAttachedProxyActors.FindRef(PrimPath); IsValid(ExistingActor))
 		{
-			PendingDiffExistingSnapshots.Add(PrimPath, BuildExistingSnapshotForDiff(PrimPath, ExistingActor));
+			JobState.PendingDiffExistingSnapshots.Add(PrimPath, BuildExistingSnapshotForDiff(PrimPath, ExistingActor));
 		}
-		++PendingDiffAttachedIndex;
+		++JobState.PendingDiffAttachedIndex;
 		++ProcessedCount;
 	}
 
 	const bool bDone =
-		PendingDiffPrimIndex >= PendingBuildPrimNodes.Num() && PendingDiffAttachedIndex >= PendingDiffAttachedPrimPaths.Num();
+		JobState.PendingDiffPrimIndex >= PendingBuildPrimNodes.Num()
+		&& JobState.PendingDiffAttachedIndex >= JobState.PendingDiffAttachedPrimPaths.Num();
 	if (!bDone)
 	{
 		UsdCarFactoryPipelineBuild::ScheduleActorContinuation(
@@ -3059,19 +2437,26 @@ void AUsdHierarchicalBuildActor::ProcessDiffPreparationBatch()
 void AUsdHierarchicalBuildActor::LaunchAsyncDiffComputation()
 {
 #if WITH_EDITOR
-	if (!bIsBuildInProgress || PendingDiffRequestId != ActiveBuildRequestId || !PendingDiffBuildAsset)
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	if (!bIsBuildInProgress || JobState.PendingBuildPlan.RequestId != ActiveBuildRequestId || !JobState.PendingBuildPlan.BuildAsset)
 	{
 		ResetPendingDiffState();
 		return;
 	}
 
 	TWeakObjectPtr<AUsdHierarchicalBuildActor> WeakThis(this);
-	TWeakObjectPtr<UCarGeneratedAssemblyDataAsset> WeakBuildAsset(PendingDiffBuildAsset);
-	const int32 RequestId = PendingDiffRequestId;
+	TWeakObjectPtr<UCarGeneratedAssemblyDataAsset> WeakBuildAsset(JobState.PendingBuildPlan.BuildAsset);
+	const int32 RequestId = JobState.PendingBuildPlan.RequestId;
 
-	TArray<UsdCarFactoryPipelineBuild::FProxyActorSnapshot> TargetSnapshots = MoveTemp(PendingDiffTargetSnapshots);
-	TMap<FString, UsdCarFactoryPipelineBuild::FProxyActorSnapshot> ExistingSnapshots = MoveTemp(PendingDiffExistingSnapshots);
-	TMap<FString, AActor*> AttachedProxyActors = MoveTemp(PendingDiffAttachedProxyActors);
+	TArray<UsdCarFactoryPipelineBuild::FProxyActorSnapshot> TargetSnapshots = MoveTemp(JobState.PendingDiffTargetSnapshots);
+	TMap<FString, UsdCarFactoryPipelineBuild::FProxyActorSnapshot> ExistingSnapshots = MoveTemp(JobState.PendingDiffExistingSnapshots);
+	TMap<FString, AActor*> AttachedProxyActors = MoveTemp(JobState.PendingDiffAttachedProxyActors);
 
 	ResetPendingDiffState();
 
@@ -3137,15 +2522,10 @@ void AUsdHierarchicalBuildActor::LaunchAsyncDiffComputation()
 
 void AUsdHierarchicalBuildActor::ResetPendingDiffState()
 {
-	PendingDiffAttachedProxyActors.Reset();
-	PendingDiffAttachedPrimPaths.Reset();
-	PendingDiffTargetSnapshots.Reset();
-	PendingDiffExistingSnapshots.Reset();
-	PendingDiffBuildAsset = nullptr;
-	PendingDiffRequestId = 0;
-	PendingDiffPrimIndex = 0;
-	PendingDiffAttachedIndex = 0;
-	bPendingDiffRefreshedFromSourceUsd = false;
+	if (UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem())
+	{
+		BuildSubsystem->GetJobState(*this).ResetDiffState();
+	}
 }
 
 void AUsdHierarchicalBuildActor::ApplyBuildResults(
@@ -3178,18 +2558,28 @@ void AUsdHierarchicalBuildActor::ApplyBuildResults(
 		}
 	}
 
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
+	{
+		bIsBuildInProgress = false;
+		PendingBuildPrimNodes.Reset();
+		return;
+	}
+
 	BuildAsset->Modify();
 	BuildAsset->SourceUsdFile = SourceUsdFile;
 
-	PendingApplyBuildAsset = BuildAsset;
-	PendingApplyAttachedProxyActors = MoveTemp(AttachedProxyActors);
-	PendingApplyPrimToProxyActor.Empty(PendingBuildPrimNodes.Num());
-	PendingApplyNewRecords.SetNum(PendingBuildPrimNodes.Num());
-	PendingApplyRecordCount = 0;
-	PendingApplyUnchangedPrimPaths = UnchangedPrimPaths;
-	PendingApplyStalePrimPaths = StalePrimPaths;
-	PendingApplyRequestId = ActiveBuildRequestId;
-	PendingApplyIndex = 0;
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	JobState.Phase = UsdCarFactoryPipelineBuild::EUsdProxyBuildJobPhase::Applying;
+	JobState.PendingBuildPlan.BuildAsset = BuildAsset;
+	JobState.PendingBuildPlan.RequestId = ActiveBuildRequestId;
+	JobState.PendingBuildPlan.UnchangedPrimPaths = UnchangedPrimPaths;
+	JobState.PendingBuildPlan.StalePrimPaths = StalePrimPaths;
+	JobState.PendingApplyAttachedProxyActors = MoveTemp(AttachedProxyActors);
+	JobState.PendingApplyPrimToProxyActor.Empty(PendingBuildPrimNodes.Num());
+	JobState.PendingApplyNewRecords.SetNum(PendingBuildPrimNodes.Num());
+	JobState.PendingApplyRecordCount = 0;
+	JobState.PendingApplyIndex = 0;
 
 	ProcessApplyBuildBatch();
 #else
@@ -3200,8 +2590,18 @@ void AUsdHierarchicalBuildActor::ApplyBuildResults(
 void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 {
 #if WITH_EDITOR
-	if (!bIsBuildInProgress || PendingApplyRequestId != ActiveBuildRequestId || !PendingApplyBuildAsset)
+	UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem();
+	if (!BuildSubsystem)
 	{
+		bIsBuildInProgress = false;
+		PendingBuildPrimNodes.Reset();
+		return;
+	}
+
+	UsdCarFactoryPipelineBuild::FUsdProxyBuildJobState& JobState = BuildSubsystem->GetJobState(*this);
+	if (!bIsBuildInProgress || JobState.PendingBuildPlan.RequestId != ActiveBuildRequestId || !JobState.PendingBuildPlan.BuildAsset)
+	{
+		ResetPendingApplyState();
 		return;
 	}
 
@@ -3239,15 +2639,15 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 	PreparedPrimDecisions.Reserve(BatchSize);
 
 	int32 ProcessedCount = 0;
-	while (PendingApplyIndex < PendingBuildPrimNodes.Num() && ProcessedCount < BatchSize)
+	while (JobState.PendingApplyIndex < PendingBuildPrimNodes.Num() && ProcessedCount < BatchSize)
 	{
-		const FPrimNodeBuildData& PrimData = PendingBuildPrimNodes[PendingApplyIndex++];
+		const FPrimNodeBuildData& PrimData = PendingBuildPrimNodes[JobState.PendingApplyIndex++];
 		++ProcessedCount;
 
 		FPreparedPrimDecision& Decision = PreparedPrimDecisions.AddDefaulted_GetRef();
 		Decision.PrimData = &PrimData;
 		Decision.PreviousRecord = FindPreviousRecord(PrimData.PrimPath);
-		Decision.ExistingProxyActor = PendingApplyAttachedProxyActors.FindRef(PrimData.PrimPath);
+		Decision.ExistingProxyActor = JobState.PendingApplyAttachedProxyActors.FindRef(PrimData.PrimPath);
 		if (!Decision.ExistingProxyActor && Decision.PreviousRecord)
 		{
 			Decision.ExistingProxyActor = ResolveProxyActorByObjectPath(Decision.PreviousRecord->ProxyActorPath);
@@ -3303,8 +2703,8 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 		}
 
 		UsdCarFactoryPipelineBuild::ApplyProxyTags(ProxyActor, GetProxyActorTag(), MakePrimTag(PrimData.PrimPath), PrimData.PrimPath);
-		PendingApplyAttachedProxyActors.Add(PrimData.PrimPath, ProxyActor);
-		PendingApplyPrimToProxyActor.Add(PrimData.PrimPath, ProxyActor);
+		JobState.PendingApplyAttachedProxyActors.Add(PrimData.PrimPath, ProxyActor);
+		JobState.PendingApplyPrimToProxyActor.Add(PrimData.PrimPath, ProxyActor);
 
 		if (PrimData.bIsStaticMesh)
 		{
@@ -3372,6 +2772,7 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 		Record.PrimPath = PrimData.PrimPath;
 		Record.ParentPrimPath = PrimData.ParentPrimPath;
 		Record.RelativeTransform = PrimData.RelativeTransform;
+		Record.bIsStaticMesh = PrimData.bIsStaticMesh;
 		Record.MeshContentHash = PrimData.MeshContentHash;
 		Record.CCRComponentName = PreviousRecord ? PreviousRecord->CCRComponentName : NAME_None;
 		Record.ProxyActorPath = ProxyActor->GetPathName();
@@ -3413,18 +2814,18 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 			}
 		}
 
-		PendingApplyNewRecords[PendingApplyRecordCount++] = MoveTemp(Record);
+		JobState.PendingApplyNewRecords[JobState.PendingApplyRecordCount++] = MoveTemp(Record);
 
 		AActor* ParentActor = this;
 		USceneComponent* AttachParentComponent = RootAttachComponent;
 		if (!PrimData.ParentPrimPath.IsEmpty())
 		{
-			if (AActor* DirectParent = PendingApplyPrimToProxyActor.FindRef(PrimData.ParentPrimPath))
+			if (AActor* DirectParent = JobState.PendingApplyPrimToProxyActor.FindRef(PrimData.ParentPrimPath))
 			{
 				ParentActor = DirectParent;
 				AttachParentComponent = UsdCarFactoryPipelineBuild::EnsureSceneRoot(DirectParent);
 			}
-			else if (AActor* ExistingParent = PendingApplyAttachedProxyActors.FindRef(PrimData.ParentPrimPath))
+			else if (AActor* ExistingParent = JobState.PendingApplyAttachedProxyActors.FindRef(PrimData.ParentPrimPath))
 			{
 				ParentActor = ExistingParent;
 				AttachParentComponent = UsdCarFactoryPipelineBuild::EnsureSceneRoot(ExistingParent);
@@ -3442,7 +2843,7 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 				}
 
 				if (bNeedsAttach
-					|| !PendingApplyUnchangedPrimPaths.Contains(PrimData.PrimPath)
+					|| !JobState.PendingBuildPlan.UnchangedPrimPaths.Contains(PrimData.PrimPath)
 					|| !UsdCarFactoryPipelineBuild::AreTransformsEquivalent(ChildRoot->GetRelativeTransform(), PrimData.RelativeTransform))
 				{
 					ChildRoot->SetRelativeTransform(PrimData.RelativeTransform);
@@ -3461,7 +2862,7 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 			}
 
 			if (bNeedsAttach
-				|| !PendingApplyUnchangedPrimPaths.Contains(PrimData.PrimPath)
+				|| !JobState.PendingBuildPlan.UnchangedPrimPaths.Contains(PrimData.PrimPath)
 				|| !UsdCarFactoryPipelineBuild::AreTransformsEquivalent(ProxyActor->GetActorTransform(), PrimData.WorldTransform))
 			{
 				ProxyActor->SetActorTransform(PrimData.WorldTransform);
@@ -3469,7 +2870,7 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 		}
 	}
 
-	if (PendingApplyIndex < PendingBuildPrimNodes.Num())
+	if (JobState.PendingApplyIndex < PendingBuildPrimNodes.Num())
 	{
 		UsdCarFactoryPipelineBuild::ScheduleActorContinuation(
 			TWeakObjectPtr<AUsdHierarchicalBuildActor>(this),
@@ -3478,31 +2879,24 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 		return;
 	}
 
-	PendingApplyNewRecords.SetNum(PendingApplyRecordCount, EAllowShrinking::No);
-	PendingApplyBuildAsset->Parts = MoveTemp(PendingApplyNewRecords);
-	PendingApplyBuildAsset->MarkPackageDirty();
-	const bool bHasActiveVariantToApply =
-		VariantDataAsset && !VariantDataAsset->ActiveVariantName.IsNone() && FindVariantRecord(VariantDataAsset, VariantDataAsset->ActiveVariantName);
+	JobState.PendingApplyNewRecords.SetNum(JobState.PendingApplyRecordCount, EAllowShrinking::No);
+	JobState.PendingBuildPlan.BuildAsset->Parts = MoveTemp(JobState.PendingApplyNewRecords);
+	JobState.PendingBuildPlan.BuildAsset->MarkPackageDirty();
 
-	const int32 BuiltPrimCount = PendingApplyPrimToProxyActor.Num();
-	const int32 BuiltMeshCount = PendingApplyBuildAsset->Parts.FilterByPredicate(
+	const int32 BuiltPrimCount = JobState.PendingApplyPrimToProxyActor.Num();
+	const int32 BuiltMeshCount = JobState.PendingBuildPlan.BuildAsset->Parts.FilterByPredicate(
 		[](const FCarGeneratedPartRecord& Record)
 		{
-			return Record.StaticMesh != nullptr;
+			return Record.bIsStaticMesh;
 		}
 	).Num();
-	const int32 BuiltPartRecordCount = PendingApplyBuildAsset->Parts.Num();
-	const int32 UnchangedCount = PendingApplyUnchangedPrimPaths.Num();
-	const int32 RemovedCount = PendingApplyStalePrimPaths.Num();
+	const int32 BuiltPartRecordCount = JobState.PendingBuildPlan.BuildAsset->Parts.Num();
+	const int32 UnchangedCount = JobState.PendingBuildPlan.UnchangedPrimPaths.Num();
+	const int32 RemovedCount = JobState.PendingBuildPlan.StalePrimPaths.Num();
 
 	PendingBuildPrimNodes.Reset();
 	bIsBuildInProgress = false;
 	ResetPendingApplyState();
-
-	if (bHasActiveVariantToApply)
-	{
-		ApplyActiveVariant();
-	}
 
 	UE_LOG(
 		LogUsdCarFactoryPipelineBuild,
@@ -3524,15 +2918,10 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 
 void AUsdHierarchicalBuildActor::ResetPendingApplyState()
 {
-	PendingApplyAttachedProxyActors.Reset();
-	PendingApplyPrimToProxyActor.Reset();
-	PendingApplyNewRecords.Reset();
-	PendingApplyRecordCount = 0;
-	PendingApplyUnchangedPrimPaths.Reset();
-	PendingApplyStalePrimPaths.Reset();
-	PendingApplyBuildAsset = nullptr;
-	PendingApplyRequestId = 0;
-	PendingApplyIndex = 0;
+	if (UUsdCarFactoryBuildSubsystem* BuildSubsystem = GetBuildSubsystem())
+	{
+		BuildSubsystem->GetJobState(*this).ResetApplyState();
+	}
 }
 
 TMap<FString, AActor*> AUsdHierarchicalBuildActor::GatherAttachedProxyActors() const
@@ -3643,19 +3032,31 @@ AActor* AUsdHierarchicalBuildActor::SpawnProxyActor(const FPrimNodeBuildData& Pr
 		return nullptr;
 	}
 
+	if (!UsdCarFactoryPipelineBuild::IsSupportedProxyPrimType(PrimData.PrimTypeName, PrimData.bIsStaticMesh))
+	{
+		UE_LOG(
+			LogUsdCarFactoryPipelineBuild,
+			Warning,
+			TEXT("Skip spawning proxy actor for unsupported prim type '%s' at '%s'. Only mesh/xform are supported."),
+			*PrimData.PrimTypeName,
+			*PrimData.PrimPath
+		);
+		return nullptr;
+	}
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.ObjectFlags |= RF_Transactional;
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	TSubclassOf<AActor> MappedActorClass = ResolveMappedActorClass(PrimData.PrimTypeName);
+	TSubclassOf<AActor> ProxyActorClass = ResolveProxyActorClass(PrimData);
 
 	AActor* NewActor = nullptr;
 	if (PrimData.bIsStaticMesh)
 	{
 		TSubclassOf<AStaticMeshActor> SpawnMeshClass = AStaticMeshActor::StaticClass();
-		if (MappedActorClass)
+		if (ProxyActorClass)
 		{
-			UClass* MappedClass = MappedActorClass.Get();
+			UClass* MappedClass = ProxyActorClass.Get();
 			if (MappedClass && MappedClass->IsChildOf(AStaticMeshActor::StaticClass()))
 			{
 				SpawnMeshClass = MappedClass;
@@ -3675,7 +3076,7 @@ AActor* AUsdHierarchicalBuildActor::SpawnProxyActor(const FPrimNodeBuildData& Pr
 	}
 	else
 	{
-		TSubclassOf<AActor> SpawnNodeClass = MappedActorClass;
+		TSubclassOf<AActor> SpawnNodeClass = ProxyActorClass;
 		if (!SpawnNodeClass)
 		{
 			SpawnNodeClass = AActor::StaticClass();
@@ -3715,35 +3116,103 @@ AActor* AUsdHierarchicalBuildActor::SpawnProxyActor(const FPrimNodeBuildData& Pr
 	return NewActor;
 }
 
-TSubclassOf<AActor> AUsdHierarchicalBuildActor::ResolveMappedActorClass(const FString& PrimTypeName) const
+TSubclassOf<AActor> AUsdHierarchicalBuildActor::ResolveProxyActorClass(const FPrimNodeBuildData& PrimData) const
 {
-	if (PrimTypeName.IsEmpty())
+	if (!UsdCarFactoryPipelineBuild::IsSupportedProxyPrimType(PrimData.PrimTypeName, PrimData.bIsStaticMesh))
 	{
 		return nullptr;
 	}
 
-	for (const TPair<FString, TSubclassOf<AActor>>& Pair : TypeNameToActorClassMap)
+	if (PrimData.bIsStaticMesh)
 	{
-		if (Pair.Key.Equals(PrimTypeName, ESearchCase::IgnoreCase))
+		if (UClass* MeshProxyClass = StaticMeshProxyActorClass.Get())
 		{
-			return Pair.Value;
+			return MeshProxyClass;
 		}
+
+		return AStaticMeshActor::StaticClass();
+	}
+
+	if (UsdCarFactoryPipelineBuild::IsTransformPrimType(PrimData.PrimTypeName))
+	{
+		if (UClass* TransformProxyClass = TransformProxyActorClass.Get())
+		{
+			return TransformProxyClass;
+		}
+
+		return AActor::StaticClass();
 	}
 
 	return nullptr;
 }
 
-void AUsdHierarchicalBuildActor::EnsureDefaultTypeNameActorClassMap()
+void AUsdHierarchicalBuildActor::EnsureDefaultProxyActorClasses()
 {
-	if (!TypeNameToActorClassMap.Contains(TEXT("xform")))
+	if (!StaticMeshProxyActorClass)
 	{
-		TypeNameToActorClassMap.Add(TEXT("xform"), AActor::StaticClass());
+		StaticMeshProxyActorClass = AStaticMeshActor::StaticClass();
 	}
 
-	if (!TypeNameToActorClassMap.Contains(TEXT("mesh")))
+	if (!TransformProxyActorClass)
 	{
-		TypeNameToActorClassMap.Add(TEXT("mesh"), AStaticMeshActor::StaticClass());
+		TransformProxyActorClass = AActor::StaticClass();
 	}
+}
+
+void AUsdHierarchicalBuildActor::MigrateLegacyTypeNameActorClassMap()
+{
+	if (TypeNameToActorClassMap.IsEmpty())
+	{
+		return;
+	}
+
+	bool bMigratedAnyValue = false;
+	for (const TPair<FString, TSubclassOf<AActor>>& Pair : TypeNameToActorClassMap)
+	{
+		if (Pair.Key.Equals(TEXT("mesh"), ESearchCase::IgnoreCase))
+		{
+			UClass* MappedClass = Pair.Value.Get();
+			if (MappedClass && MappedClass->IsChildOf(AStaticMeshActor::StaticClass()))
+			{
+				StaticMeshProxyActorClass = MappedClass;
+				bMigratedAnyValue = true;
+			}
+			else
+			{
+				UE_LOG(
+					LogUsdCarFactoryPipelineBuild,
+					Warning,
+					TEXT("Ignoring deprecated mesh mapping '%s' because it is not AStaticMeshActor-derived."),
+					MappedClass ? *MappedClass->GetName() : TEXT("None")
+				);
+			}
+		}
+		else if (Pair.Key.Equals(TEXT("xform"), ESearchCase::IgnoreCase))
+		{
+			if (Pair.Value)
+			{
+				TransformProxyActorClass = Pair.Value;
+				bMigratedAnyValue = true;
+			}
+		}
+		else
+		{
+			UE_LOG(
+				LogUsdCarFactoryPipelineBuild,
+				Warning,
+				TEXT("Ignoring deprecated TypeNameToActorClassMap entry '%s'. Only mesh/xform are supported."),
+				*Pair.Key
+			);
+		}
+	}
+
+	if (bMigratedAnyValue)
+	{
+		Modify();
+		TypeNameToActorClassMap.Reset();
+	}
+
+	EnsureDefaultProxyActorClasses();
 }
 
 void AUsdHierarchicalBuildActor::ApplyMaterials(
