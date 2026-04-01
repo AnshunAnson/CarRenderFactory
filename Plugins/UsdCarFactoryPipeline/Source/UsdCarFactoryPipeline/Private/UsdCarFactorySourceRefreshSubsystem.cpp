@@ -7,56 +7,38 @@
 #include "Misc/Paths.h"
 #include "UsdCarFactoryDataAssetSubsystem.h"
 
-namespace
-{
-	static AUsdHierarchicalBuildActor* ResolveTargetActor(const FUsdCarFactoryBuildInputs& Inputs)
-	{
-		return Inputs.TargetActor.Get();
-	}
-
-	static void ApplyObjectOverrides(AUsdHierarchicalBuildActor* Actor, const FUsdCarFactoryBuildInputs& Inputs)
-	{
-		if (!Actor)
-		{
-			return;
-		}
-
-		if (!Inputs.SourceUsdFile.FilePath.IsEmpty())
-		{
-			Actor->SourceUsdFile = Inputs.SourceUsdFile;
-		}
-		if (Inputs.GeneratedDataAsset)
-		{
-			Actor->GeneratedDataAsset = Inputs.GeneratedDataAsset;
-		}
-		if (Inputs.StaticMeshProxyActorClass)
-		{
-			Actor->StaticMeshProxyActorClass = Inputs.StaticMeshProxyActorClass;
-		}
-		if (Inputs.TransformProxyActorClass)
-		{
-			Actor->TransformProxyActorClass = Inputs.TransformProxyActorClass;
-		}
-		Actor->bBuildAsync = Inputs.bBuildAsync;
-		Actor->MaxPrimBuildPerTick = Inputs.MaxPrimBuildPerTick;
-		Actor->ParseResultFrameBudgetMs = Inputs.ParseResultFrameBudgetMs;
-		Actor->MaxParseResultsPerTick = Inputs.MaxParseResultsPerTick;
-	}
-}
-
 FUsdCarFactorySourceRefreshResult UUsdCarFactorySourceRefreshSubsystem::RefreshFromSourceIfNeeded(const FUsdCarFactoryBuildInputs& Inputs)
 {
 	FUsdCarFactorySourceRefreshResult Result;
 
 #if WITH_EDITOR
-	AUsdHierarchicalBuildActor* TargetActor = ResolveTargetActor(Inputs);
+	AUsdHierarchicalBuildActor* TargetActor = Inputs.TargetActor.Get();
 	if (!TargetActor)
 	{
 		Result.Message = TEXT("RefreshFromSourceIfNeeded requires TargetActor.");
 		return Result;
 	}
 
-	ApplyObjectOverrides(TargetActor, Inputs);
+	if (!Inputs.SourceUsdFile.FilePath.IsEmpty())
+	{
+		TargetActor->SourceUsdFile = Inputs.SourceUsdFile;
+	}
+	if (Inputs.GeneratedDataAsset)
+	{
+		TargetActor->GeneratedDataAsset = Inputs.GeneratedDataAsset;
+	}
+	if (Inputs.StaticMeshProxyActorClass)
+	{
+		TargetActor->StaticMeshProxyActorClass = Inputs.StaticMeshProxyActorClass;
+	}
+	if (Inputs.TransformProxyActorClass)
+	{
+		TargetActor->TransformProxyActorClass = Inputs.TransformProxyActorClass;
+	}
+	TargetActor->bBuildAsync = Inputs.bBuildAsync;
+	TargetActor->MaxPrimBuildPerTick = Inputs.MaxPrimBuildPerTick;
+	TargetActor->ParseResultFrameBudgetMs = Inputs.ParseResultFrameBudgetMs;
+	TargetActor->MaxParseResultsPerTick = Inputs.MaxParseResultsPerTick;
 
 	UCarGeneratedAssemblyDataAsset* BuildAsset = nullptr;
 	UUsdAssetCache3* AssetCache = nullptr;

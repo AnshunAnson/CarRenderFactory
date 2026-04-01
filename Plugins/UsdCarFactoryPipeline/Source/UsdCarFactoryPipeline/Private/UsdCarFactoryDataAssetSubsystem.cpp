@@ -343,8 +343,7 @@ UUsdAssetCache3* UUsdCarFactoryDataAssetSubsystem::ResolveOrCreateUsdAssetCacheA
 	{
 		AssetCache = NewObject<UUsdAssetCache3>(
 			Package,
-			UUsdAssetCache3::StaticClass(),
-			*FString(AssetCacheBaseName),
+			FName(AssetCacheBaseName),
 			RF_Public | RF_Standalone | RF_Transactional
 		);
 	}
