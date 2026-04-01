@@ -1,0 +1,27 @@
+name: Translate README
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Translate to English
+        uses: dephraiim/translate-readme@main
+        with:
+          LANG: en
+
+      - name: Translate to Japanese
+        uses: dephraiim/translate-readme@main
+        with:
+          LANG: ja
+
+      - name: Translate to Korean
+        uses: dephraiim/translate-readme@main
+        with:
+          LANG: ko

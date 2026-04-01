@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "UsdCarFactoryPipeline",
+	"Description": "Editor-only USD car assembly build and injection pipeline.",
+	"Category": "Other",
+	"CreatedBy": "CarRenderFactory",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "USDImporter",
+			"Enabled": true
+		},
+		{
+			"Name": "USDCore",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "UsdCarFactoryPipeline",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
