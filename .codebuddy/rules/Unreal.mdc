@@ -1,0 +1,9 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-04-01T12:26:18.778Z
+provider: 
+---
+
+强制使用mcp和cli调试UE验证log信息正确即完成任务,否则任务失败,

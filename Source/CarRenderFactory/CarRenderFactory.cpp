@@ -16,8 +16,8 @@
 // ============================================================
 #if WITH_EDITOR
 #include "PropertyEditorModule.h"
-#include "OpenUSDActorDetails.h"
-#include "OpenUSDActor.h"
+// #include "OpenUSDActorDetails.h"  // Removed: file deleted
+// #include "OpenUSDActor.h"         // Removed: file deleted
 #endif
 
 // ============================================================
@@ -31,15 +31,7 @@ public:
     virtual void StartupModule() override
     {
 #if WITH_EDITOR
-        // 注册 OpenUSD Actor 的 Details 面板自定义
-        if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
-        {
-            FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-            PropertyModule.RegisterCustomClassLayout(
-                AOpenUSDActor::StaticClass()->GetFName(),
-                FOnGetDetailCustomizationInstance::CreateStatic(&FOpenUSDActorDetails::MakeInstance)
-            );
-        }
+        // Removed: OpenUSD Actor Details panel registration (files deleted)
 #endif
         UE_LOG(LogTemp, Log, TEXT("CarRenderFactory module loaded"));
     }
@@ -48,12 +40,7 @@ public:
     virtual void ShutdownModule() override
     {
 #if WITH_EDITOR
-        // 取消注册 Details 面板自定义
-        if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
-        {
-            FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-            PropertyModule.UnregisterCustomClassLayout(AOpenUSDActor::StaticClass()->GetFName());
-        }
+        // Removed: OpenUSD Actor Details panel unregistration (files deleted)
 #endif
         UE_LOG(LogTemp, Log, TEXT("CarRenderFactory module unloaded"));
     }

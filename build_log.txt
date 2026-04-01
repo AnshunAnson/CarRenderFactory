@@ -1,0 +1,44 @@
+Using bundled DotNet SDK version: 8.0.412 win-x64
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" CarRenderFactoryEditor Win64 Development -Project=D:\UE\Project\CarRenderFactory\CarRenderFactory.uproject -Wait -NoHotReload
+Log file: C:\Users\Administrator\AppData\Local\UnrealBuildTool\Log.txt
+Using 'git status' to determine working set for adaptive non-unity build (D:\UE\Project\CarRenderFactory).
+Creating makefile for CarRenderFactoryEditor (.uproject file is newer)
+McpAutomationBridge: Detected 36934MB available memory (of 65381MB total)
+McpAutomationBridge: Unity builds enabled
+McpAutomationBridge: Added optional module 'GameplayAbilities' with delay-load
+McpAutomationBridge: Added optional module 'MetasoundEngine' with delay-load
+McpAutomationBridge: Added optional module 'MetasoundFrontend' (conditional)
+McpAutomationBridge: Added optional module 'MetasoundEditor' with delay-load
+McpAutomationBridge: Added optional module 'StateTreeModule' with delay-load
+McpAutomationBridge: Added optional module 'StateTreeEditorModule' with delay-load
+McpAutomationBridge: Added optional module 'SmartObjectsModule' with delay-load
+McpAutomationBridge: Added optional module 'SmartObjectsEditorModule' with delay-load
+McpAutomationBridge: Added optional module 'MassEntity' with delay-load
+McpAutomationBridge: Added optional module 'MassSpawner' with delay-load
+McpAutomationBridge: Added optional module 'MassActors' with delay-load
+McpAutomationBridge: Added optional module 'VoiceChat' with delay-load
+McpAutomationBridge: Added optional module 'OnlineSubsystem' with delay-load
+McpAutomationBridge: Added optional module 'OnlineSubsystemUtils' with delay-load
+McpAutomationBridge: Added optional module 'ControlRig' with delay-load
+McpAutomationBridge: Added optional module 'ControlRigDeveloper' with delay-load
+McpAutomationBridge: Added optional module 'ControlRigEditor' with delay-load
+McpAutomationBridge: Added optional module 'ProceduralMeshComponent' with delay-load
+McpAutomationBridge: Added optional module 'EnvironmentQueryEditor' with delay-load
+McpAutomationBridge: Added optional module 'GeometryScriptingCore' with delay-load
+McpAutomationBridge: Added optional module 'GeometryScriptingEditor' with delay-load
+McpAutomationBridge: Added optional module 'LevelSequenceEditor' with delay-load
+McpAutomationBridge: Added optional module 'NiagaraEditor' with delay-load
+McpAutomationBridge: Added optional module 'EnhancedInput' with delay-load
+McpAutomationBridge: Added optional module 'InputEditor' with delay-load
+McpAutomationBridge: Added optional module 'BehaviorTreeEditor' with delay-load
+McpAutomationBridge: Added optional module 'DataValidation' with delay-load
+McpAutomationBridge: Added optional module 'IKRig' with delay-load
+McpAutomationBridge: Added optional module 'IKRigEditor' with delay-load
+McpAutomationBridge: Added optional module 'ChaosVehicles' with delay-load
+McpAutomationBridge: Added optional module 'AnimationData' with delay-load
+Warning: Plugin 'UmgMcp' does not list plugin 'EditorScriptingUtilities' as a dependency, but module 'UmgMcp' depends on module 'EditorScriptingUtilities'.
+UHT compiled-in object format Default
+Target is up to date
+
+Result: Succeeded
+Total execution time: 5.08 seconds

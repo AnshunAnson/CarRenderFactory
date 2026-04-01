@@ -927,8 +927,6 @@ void AUsdHierarchicalBuildActor::ApplyImportedAssetsToPrimNodes(
 		else if (const FCarGeneratedPartRecord* PreviousRecord = FindPreviousRecord(PrimData.PrimPath))
 		{
 			PrimData.StaticMesh = PreviousRecord->StaticMesh;
-			PrimData.SourceMaterialSlotNames = PreviousRecord->MaterialSlotNames;
-			PrimData.SourceMaterials = PreviousRecord->Materials;
 		}
 
 		PrimData.SourceMaterials.Reset();
@@ -953,6 +951,22 @@ void AUsdHierarchicalBuildActor::ApplyImportedAssetsToPrimNodes(
 					if (!PrimData.SourceMaterials[SlotIndex] && ImportedMaterials->IsValidIndex(ImportedMaterialIndex))
 					{
 						PrimData.SourceMaterials[SlotIndex] = (*ImportedMaterials)[ImportedMaterialIndex++];
+					}
+				}
+			}
+
+			const FCarGeneratedPartRecord* PreviousRecord = FindPreviousRecord(PrimData.PrimPath);
+			if (PreviousRecord)
+			{
+				for (int32 SlotIndex = 0; SlotIndex < PrimData.SourceMaterials.Num(); ++SlotIndex)
+				{
+					if (!PrimData.SourceMaterials[SlotIndex] && PrimData.SourceMaterialSlotNames.IsValidIndex(SlotIndex))
+					{
+						const FName& SlotName = PrimData.SourceMaterialSlotNames[SlotIndex];
+						if (const TObjectPtr<UMaterialInterface>* OverrideMat = PreviousRecord->MaterialOverrides.Find(SlotName))
+						{
+							PrimData.SourceMaterials[SlotIndex] = *OverrideMat;
+						}
 					}
 				}
 			}
@@ -1244,6 +1258,28 @@ void AUsdHierarchicalBuildActor::HandleParseResult(FSourceParseResult&& ParseRes
 	}
 	else
 	{
+		TArray<FString> MeshPrimPaths;
+		for (const FPrimNodeBuildData& PrimNode : FallbackPrimNodes)
+		{
+			if (PrimNode.bIsStaticMesh && !PrimNode.PrimPath.IsEmpty())
+			{
+				MeshPrimPaths.Add(PrimNode.PrimPath);
+			}
+		}
+
+		if (MeshPrimPaths.Num() > 0)
+		{
+			TMap<FString, TObjectPtr<UStaticMesh>> FallbackPrimToMesh;
+			TMap<FString, TArray<TObjectPtr<UMaterialInterface>>> FallbackPrimToMaterials;
+			ImportMeshAssetsForPrimPaths(
+				ParseResult.SourceUsdPath,
+				MeshPrimPaths,
+				FallbackPrimToMesh,
+				FallbackPrimToMaterials
+			);
+			ApplyImportedAssetsToPrimNodes(FallbackPrimNodes, FallbackPrimToMesh, FallbackPrimToMaterials);
+		}
+
 		UpdateSourceRefreshMetadata(
 			BuildAsset,
 			ParseResult.SourceUsdPath,
@@ -1825,7 +1861,7 @@ void AUsdHierarchicalBuildActor::SaveCurrentCacheAsMaterialVariant()
 				ProxyRecord.bCastHiddenShadow = StaticMeshComponent->bCastHiddenShadow;
 				ProxyRecord.LightingChannels = StaticMeshComponent->LightingChannels;
 				ProxyRecord.RuntimeVirtualTextures = StaticMeshComponent->RuntimeVirtualTextures;
-				ProxyRecord.VirtualTextureRenderPassType = StaticMeshComponent->VirtualTextureRenderPassType;
+				ProxyRecord.VirtualTextureRenderPassType = static_cast<uint8>(StaticMeshComponent->VirtualTextureRenderPassType);
 			}
 		}
 
@@ -1969,7 +2005,7 @@ void AUsdHierarchicalBuildActor::EnsureLegacyPartsMigrated(
 			NewState.bCastHiddenShadow = LegacyState.bCastHiddenShadow;
 			NewState.LightingChannels = LegacyState.LightingChannels;
 			NewState.RuntimeVirtualTextures = LegacyState.RuntimeVirtualTextures;
-			NewState.VirtualTextureRenderPassType = LegacyState.VirtualTextureRenderPassType;
+			NewState.VirtualTextureRenderPassType = static_cast<uint8>(LegacyState.VirtualTextureRenderPassType);
 			NewState.StaticMesh = LegacyState.StaticMesh;
 			NewState.Materials = LegacyState.Materials;
 			NewState.ProxyActorPath = LegacyState.ProxyActorPath;
@@ -2109,7 +2145,7 @@ void AUsdHierarchicalBuildActor::ApplyVariantToProxyActor(
 	StaticMeshComponent->TranslucencySortPriority = VariantRecord.TranslucencySortPriority;
 	StaticMeshComponent->bVisibleInReflectionCaptures = VariantRecord.bVisibleInReflectionCaptures;
 	StaticMeshComponent->RuntimeVirtualTextures = VariantRecord.RuntimeVirtualTextures;
-	StaticMeshComponent->VirtualTextureRenderPassType = VariantRecord.VirtualTextureRenderPassType;
+	StaticMeshComponent->VirtualTextureRenderPassType = static_cast<ERuntimeVirtualTextureMainPassType>(VariantRecord.VirtualTextureRenderPassType);
 
 	StaticMeshComponent->SetStaticMesh(VariantRecord.StaticMesh);
 
@@ -2346,8 +2382,7 @@ void AUsdHierarchicalBuildActor::BindVariantDataAssetEvents()
 		return;
 	}
 
-	VariantDataAssetChangedHandle =
-		VariantDataAsset->OnActiveVariantChanged.AddUObject(this, &AUsdHierarchicalBuildActor::HandleVariantDataAssetActiveVariantChanged);
+	VariantDataAsset->OnActiveVariantChanged.AddDynamic(this, &AUsdHierarchicalBuildActor::HandleVariantDataAssetActiveVariantChanged);
 	BoundVariantDataAsset = VariantDataAsset;
 	ActiveVariantName = VariantDataAsset->ActiveVariantName;
 #endif
@@ -2356,12 +2391,11 @@ void AUsdHierarchicalBuildActor::BindVariantDataAssetEvents()
 void AUsdHierarchicalBuildActor::UnbindVariantDataAssetEvents()
 {
 #if WITH_EDITOR
-	if (BoundVariantDataAsset.IsValid() && VariantDataAssetChangedHandle.IsValid())
+	if (BoundVariantDataAsset.IsValid())
 	{
-		BoundVariantDataAsset->OnActiveVariantChanged.Remove(VariantDataAssetChangedHandle);
+		BoundVariantDataAsset->OnActiveVariantChanged.RemoveAll(this);
 	}
 
-	VariantDataAssetChangedHandle.Reset();
 	BoundVariantDataAsset.Reset();
 #endif
 }
@@ -3289,14 +3323,39 @@ void AUsdHierarchicalBuildActor::ProcessApplyBuildBatch()
 			ProxySMC->Modify();
 			ProxySMC->SetMobility(EComponentMobility::Movable);
 
-			// Cache-only build mode:
-			// - Reused existing proxy actor: preserve its current mesh/material overrides and write them back to asset.
-			// - Newly spawned/recreated proxy actor: initialize from cached record.
-			const bool bShouldInitializeFromCache = !bHadExistingProxyActor;
-			if (bShouldInitializeFromCache)
+			const UStaticMesh* CurrentStaticMesh = ProxySMC->GetStaticMesh();
+			const UStaticMesh* PreviousStaticMesh = PreviousRecord ? PreviousRecord->StaticMesh.Get() : nullptr;
+
+			// Reused proxy actors need an explicit mesh resync when they were previously saved empty
+			// or when they still mirror the cached mesh that has since been refreshed from USD.
+			bool bShouldSyncStaticMesh = !bHadExistingProxyActor;
+			if (!bShouldSyncStaticMesh)
+			{
+				const bool bCurrentMeshMissingButResolved = (CurrentStaticMesh == nullptr && PrimData.StaticMesh != nullptr);
+				const bool bCurrentMeshStillMatchesCachedRecord =
+					(CurrentStaticMesh == PreviousStaticMesh) && (CurrentStaticMesh != PrimData.StaticMesh);
+				bShouldSyncStaticMesh = bCurrentMeshMissingButResolved || bCurrentMeshStillMatchesCachedRecord;
+			}
+
+			if (bShouldSyncStaticMesh)
 			{
 				ProxySMC->SetStaticMesh(PrimData.StaticMesh);
 				ApplyMaterials(PrimData, ProxySMC, PreviousRecord);
+			}
+
+			if (!ProxySMC->GetStaticMesh())
+			{
+				UE_LOG(
+					LogUsdCarFactoryPipelineBuild,
+					Warning,
+					TEXT(
+						"Static mesh prim '%s' resolved to proxy actor '%s' without a valid mesh asset. prim_mesh=%s previous_mesh=%s"
+					),
+					*PrimData.PrimPath,
+					*ProxyActor->GetName(),
+					*UsdCarFactoryPipelineBuild::GetObjectPath(PrimData.StaticMesh),
+					*UsdCarFactoryPipelineBuild::GetObjectPath(PreviousRecord ? PreviousRecord->StaticMesh.Get() : nullptr)
+				);
 			}
 		}
 		else if (ProxyStaticActor)

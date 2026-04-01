@@ -2,139 +2,135 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Engine/EngineTypes.h"
-
+#include "Components/RuntimeVirtualTextureComponent.h"
 #include "CarUsdVariantDataAsset.generated.h"
 
-class UMaterialInterface;
-class URuntimeVirtualTexture;
 class UStaticMesh;
-struct FPropertyChangedEvent;
+class UMaterialInterface;
 
 USTRUCT(BlueprintType)
-struct USDCARFACTORYPIPELINE_API FCarUsdProxyActorState
+struct FCarUsdProxyActorState
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	FString PrimPath;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	FString ProxyActorPath;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	FTransform RelativeTransform = FTransform::Identity;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	bool bIsStaticMeshActor = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	TEnumAsByte<EComponentMobility::Type> Mobility = TEnumAsByte<EComponentMobility::Type>(EComponentMobility::Movable);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	bool bActorHiddenInGame = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	TEnumAsByte<EComponentMobility::Type> Mobility = EComponentMobility::Movable;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	TEnumAsByte<ECollisionEnabled::Type> CollisionEnabled = TEnumAsByte<ECollisionEnabled::Type>(ECollisionEnabled::QueryAndPhysics);
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	TEnumAsByte<ECollisionEnabled::Type> CollisionEnabled = ECollisionEnabled::QueryAndPhysics;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	bool bComponentVisible = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	bool bCastShadow = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	bool bRenderCustomDepth = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	bool bIsStaticMeshActor = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	int32 CustomDepthStencilValue = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	int32 TranslucencySortPriority = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	bool bVisibleInReflectionCaptures = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	bool bCastHiddenShadow = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	FLightingChannels LightingChannels;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	TArray<TObjectPtr<URuntimeVirtualTexture>> RuntimeVirtualTextures;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	ERuntimeVirtualTextureMainPassType VirtualTextureRenderPassType =
-		ERuntimeVirtualTextureMainPassType::Exclusive;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	TObjectPtr<UStaticMesh> StaticMesh = nullptr;
 
-	// Legacy: indexed material array, kept for backward compatibility
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	TArray<TObjectPtr<UMaterialInterface>> Materials;
 
-	// Material slot names from the static mesh, used to match materials when mesh changes
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	TArray<FName> MaterialSlotNames;
 
-	// Material overrides keyed by slot name - survives mesh topology changes
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	TMap<FName, TObjectPtr<UMaterialInterface>> MaterialOverrides;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	FString ProxyActorPath;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	bool bRenderCustomDepth = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	int32 CustomDepthStencilValue = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	int32 TranslucencySortPriority = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	bool bVisibleInReflectionCaptures = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	bool bCastHiddenShadow = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	FLightingChannels LightingChannels;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	TArray<TObjectPtr<URuntimeVirtualTexture>> RuntimeVirtualTextures;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	uint8 VirtualTextureRenderPassType = 0;
 };
 
 USTRUCT(BlueprintType)
-struct USDCARFACTORYPIPELINE_API FCarUsdVariantRecord
+struct FCarUsdVariantRecord
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
-	FName VariantName = NAME_None;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
+	FName VariantName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	FString SourceUsdPath;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	FDateTime SavedAtUtc;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD|Variant")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "USD Variant")
 	TArray<FCarUsdProxyActorState> ProxyActorStates;
 };
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnCarUsdVariantDataAssetActiveVariantChanged, class UCarUsdVariantDataAsset*);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActiveVariantChanged, UCarUsdVariantDataAsset*, ChangedAsset);
 
+/**
+ * Stores named snapshots of proxy actor states (materials, visibility, transforms, etc.)
+ * for quick variant switching during USD car factory workflows.
+ */
 UCLASS(BlueprintType)
-class USDCARFACTORYPIPELINE_API UCarUsdVariantDataAsset : public UPrimaryDataAsset
+class USDCARFACTORYPIPELINE_API UCarUsdVariantDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "USD Variant", meta = (TitleProperty = "VariantName"))
+	/** All saved variants. Each variant stores per-actor property snapshots. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variants")
 	TArray<FCarUsdVariantRecord> Variants;
 
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "USD Variant",
-		meta = (
-			GetOptions = "GetVariantNameOptions",
-			DisplayName = "活动Variant",
-			ToolTip = "设计师常用入口：这里切换后会自动通知绑定该资产的UsdHierarchicalBuildActor，并立即应用对应变体。"
-		)
-	)
-	FName ActiveVariantName = TEXT("Default");
+	/** Currently active variant name. Changing this triggers OnActiveVariantChanged. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Variants")
+	FName ActiveVariantName;
 
-	FOnCarUsdVariantDataAssetActiveVariantChanged OnActiveVariantChanged;
+	/** Broadcast when ActiveVariantName changes (via editor property change or programmatic set). */
+	UPROPERTY(BlueprintAssignable, Category = "Variants")
+	FOnActiveVariantChanged OnActiveVariantChanged;
 
-	UFUNCTION()
+	/** Returns a deduplicated list of available variant names. */
+	UFUNCTION(BlueprintCallable, Category = "USD Variant")
 	TArray<FName> GetVariantNameOptions() const;
 
+	/** Find a variant record by name (const). */
 	const FCarUsdVariantRecord* FindVariant(const FName& VariantName) const;
+
+	/** Find a variant record by name (mutable). */
 	FCarUsdVariantRecord* FindVariantMutable(const FName& VariantName);
 
 #if WITH_EDITOR
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 private:
