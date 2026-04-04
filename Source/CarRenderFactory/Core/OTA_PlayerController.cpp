@@ -187,17 +187,17 @@ void AOTA_PlayerController::Look(const FInputActionValue& Value)
 
 void AOTA_PlayerController::Jump()
 {
-    if (APawn* ControlledPawn = GetPawn())
+    if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
     {
-        ControlledPawn->Jump();
+        ControlledCharacter->Jump();
     }
 }
 
 void AOTA_PlayerController::StopJumping()
 {
-    if (APawn* ControlledPawn = GetPawn())
+    if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
     {
-        ControlledPawn->StopJumping();
+        ControlledCharacter->StopJumping();
     }
 }
 
@@ -230,6 +230,12 @@ void AOTA_PlayerController::HeavyAttack()
 
 void AOTA_PlayerController::Skill1()
 {
+    if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
+    {
+        OTAChar->ActivateQiShield();
+        return;
+    }
+
     if (ASC)
     {
         FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(FName("Ability.Skill.QiShield"));
@@ -239,6 +245,12 @@ void AOTA_PlayerController::Skill1()
 
 void AOTA_PlayerController::Skill2()
 {
+    if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
+    {
+        OTAChar->ActivateDash();
+        return;
+    }
+
     if (ASC)
     {
         FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(FName("Ability.Skill.Dash"));
@@ -248,6 +260,12 @@ void AOTA_PlayerController::Skill2()
 
 void AOTA_PlayerController::Skill3()
 {
+    if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
+    {
+        OTAChar->ActivateTreasureSense();
+        return;
+    }
+
     if (ASC)
     {
         FGameplayTag SkillTag = FGameplayTag::RequestGameplayTag(FName("Ability.Skill.TreasureSense"));

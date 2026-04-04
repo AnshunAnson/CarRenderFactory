@@ -7,6 +7,12 @@ UOTA_QiComponent::UOTA_QiComponent()
     PrimaryComponentTick.bCanEverTick = true;
 }
 
+void UOTA_QiComponent::BeginPlay()
+{
+    Super::BeginPlay();
+    OwnerCharacter = Cast<AOTA_Character>(GetOwner());
+}
+
 void UOTA_QiComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -17,6 +23,15 @@ void UOTA_QiComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
         if (!OwnerCharacter)
         {
             return;
+        }
+    }
+
+    if (!bIsLooting && OwnerCharacter->IsAlive())
+    {
+        const float Regen = QI_REGEN_RATE * OwnerCharacter->GetQiRegenMultiplier() * DeltaTime;
+        if (Regen > 0.0f)
+        {
+            OwnerCharacter->ModifyQi(Regen);
         }
     }
 
@@ -53,7 +68,6 @@ void UOTA_QiComponent::ModifyQi(float Delta)
         return;
     }
 
-    float OldQi = GetQiValue();
     OwnerCharacter->ModifyQi(Delta);
     float NewQi = GetQiValue();
 
@@ -117,4 +131,34 @@ EQiLevel UOTA_QiComponent::CalculateQiLevel(float QiValue) const
 
 void UOTA_QiComponent::UpdateQiLevelEffects(EQiLevel OldLevel, EQiLevel NewLevel)
 {
+    if (!OwnerCharacter)
+    {
+        return;
+    }
+
+    switch (NewLevel)
+    {
+    case EQiLevel::High:
+        OwnerCharacter->SetAttackPowerMultiplier(1.1f);
+        OwnerCharacter->SetMoveSpeedMultiplier(1.0f);
+        OwnerCharacter->SetQiRegenMultiplier(1.2f);
+        break;
+    case EQiLevel::Normal:
+        OwnerCharacter->SetAttackPowerMultiplier(1.0f);
+        OwnerCharacter->SetMoveSpeedMultiplier(1.0f);
+        OwnerCharacter->SetQiRegenMultiplier(1.0f);
+        break;
+    case EQiLevel::Low:
+        OwnerCharacter->SetAttackPowerMultiplier(0.9f);
+        OwnerCharacter->SetMoveSpeedMultiplier(0.95f);
+        OwnerCharacter->SetQiRegenMultiplier(1.0f);
+        break;
+    case EQiLevel::Critical:
+        OwnerCharacter->SetAttackPowerMultiplier(0.8f);
+        OwnerCharacter->SetMoveSpeedMultiplier(0.95f);
+        OwnerCharacter->SetQiRegenMultiplier(1.0f);
+        break;
+    default:
+        break;
+    }
 }
