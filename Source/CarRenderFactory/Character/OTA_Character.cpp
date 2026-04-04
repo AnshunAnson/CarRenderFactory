@@ -274,6 +274,21 @@ void AOTA_Character::EndTreasureSense()
     bTreasureSenseActive = false;
 }
 
+float AOTA_Character::GetQi() const
+{
+    return AttributeSet ? AttributeSet->GetQi() : 0.0f;
+}
+
+float AOTA_Character::GetHealth() const
+{
+    return AttributeSet ? AttributeSet->GetHealth() : 0.0f;
+}
+
+int32 AOTA_Character::GetGold() const
+{
+    return AttributeSet ? static_cast<int32>(AttributeSet->GetGold()) : 0;
+}
+
 void AOTA_Character::OnRep_CurrentMeleeType(EMeleeType OldType)
 {
 }
