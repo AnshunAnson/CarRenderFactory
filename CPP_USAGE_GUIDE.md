@@ -163,3 +163,13 @@
 1. 先做一个“主循环验证地图”（2-4 个玩家，仅保留射击/近战/武器/背包/联机关键链路）。
 2. 把技能触发、命中反馈、Qi 变化做成屏幕调试文本（便于快速定位）。
 3. 主循环稳定后，再把摸金点当作边缘模块接入验证。
+
+---
+
+## 7. 模板变体补充说明（2026-04-04）
+
+- `TP_FirstPersonGameMode` 与 `AHorrorGameMode` 当前为“轻量 C++ 基类”，默认不在 C++ 中绑定具体 Pawn/Controller，建议在对应 Blueprint GameMode 资产中完成具体类配置。
+- `AShooterCharacter` 已补齐开火蒙太奇播放逻辑，并修复第三人称武器挂点使用，接入时请确认：
+  1. 角色第一/第三人称 AnimInstance 均已配置；
+  2. 武器蓝图中的开火 Montage 资产已设置；
+  3. `ThirdPersonWeaponSocket` 在角色骨骼上存在且命名一致。
