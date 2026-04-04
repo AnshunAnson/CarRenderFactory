@@ -42,37 +42,15 @@ public class CarRenderFactory : ModuleRules
 	/// </param>
 	public CarRenderFactory(ReadOnlyTargetRules Target) : base(Target)
 	{
-		// ============================================================
-		// 预编译头 (PCH) 使用模式
-		// ============================================================
-		// PCHUsageMode.UseExplicitOrSharedPCHs 是推荐的设置
-		//
-		// 三种模式:
-		// 1. UseExplicitOrSharedPCHs (推荐):
-		//    - 使用显式或共享的 PCH
-		//    - 平衡编译速度和灵活性
-		//    - UE5 默认选项
-		//
-		// 2. UseSharedPCHs:
-		//    - 使用共享 PCH
-		//    - 编译速度最快
-		//    - 可能导致头文件膨胀
-		//
-		// 3. NoPCHs:
-		//    - 不使用预编译头
-		//    - 编译速度最慢
-		//    - 用于调试头文件依赖问题
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		// ============================================================
-		// 公共依赖模块
-		// ============================================================
-		// PublicDependencyModuleNames 定义模块的公共依赖
-		// 公共依赖意味着:
-		// - 此模块的头文件可以 include 依赖模块的公共头文件
-		// - 依赖会传递给依赖此模块的其他模块
-		//
-		// AddRange 批量添加多个模块:
+		PublicIncludePaths.AddRange(new string[] {
+			System.IO.Path.Combine(ModuleDirectory, "Character"),
+			System.IO.Path.Combine(ModuleDirectory, "Combat"),
+			System.IO.Path.Combine(ModuleDirectory, "Core"),
+			System.IO.Path.Combine(ModuleDirectory, "Input")
+		});
+
 		PublicDependencyModuleNames.AddRange(new string[] {
 			// --------------------------------------------------------
 			// Core - 引擎核心模块
@@ -200,7 +178,14 @@ public class CarRenderFactory : ModuleRules
 			// NavigationSystem - 导航系统
 			// - 寻路
 			// - 导航网格
-			"NavigationSystem"
+			"NavigationSystem",
+
+			// --------------------------------------------------------
+			// StateTreeModule - 状态树系统 (UE5.4+)
+			// --------------------------------------------------------
+			// - UStateTreeAIComponent
+			// - 状态机 AI
+			"StateTreeModule"
 		});
 
 		// ============================================================

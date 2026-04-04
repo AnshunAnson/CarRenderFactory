@@ -1,5 +1,5 @@
 #include "OTA_QiComponent.h"
-#include "Character/OTA_Character.h"
+#include "OTA_Character.h"
 
 UOTA_QiComponent::UOTA_QiComponent()
 {

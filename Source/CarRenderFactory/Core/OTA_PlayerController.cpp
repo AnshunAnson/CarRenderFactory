@@ -1,5 +1,5 @@
 #include "OTA_PlayerController.h"
-#include "Character/OTA_Character.h"
+#include "OTA_Character.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayTagContainer.h"
 #include "EnhancedInputComponent.h"
