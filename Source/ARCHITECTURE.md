@@ -2,9 +2,9 @@
 
 ## 项目概述
 
-汽车渲染工厂 (CarRenderFactory) 是一个基于 Unreal Engine 5.7 的汽车渲染和可视化项目。
+汽车渲染工厂 (CarRenderFactory) 是一个基于 Unreal Engine 5.7 的硬核FPSx东方冷兵器游戏项目。
 
----
+***
 
 ## 1. 项目整体架构
 
@@ -52,7 +52,7 @@ graph TB
     style MC fill:#5bc0de,color:#fff
 ```
 
----
+***
 
 ## 2. 模块依赖关系
 
@@ -102,7 +102,7 @@ graph LR
     style O4 fill:#95a5a6,color:#fff
 ```
 
----
+***
 
 ## 3. 目录结构
 
@@ -140,7 +140,7 @@ graph TB
     style BUILD fill:#f0ad4e,color:#fff
 ```
 
----
+***
 
 ## 4. 构建流程
 
@@ -185,7 +185,7 @@ flowchart TD
     style EDITOR fill:#5cb85c,color:#fff
 ```
 
----
+***
 
 ## 5. 模块生命周期
 
@@ -220,7 +220,7 @@ sequenceDiagram
     deactivate Module
 ```
 
----
+***
 
 ## 6. 类继承结构 (规划)
 
@@ -250,7 +250,7 @@ classDiagram
     note for FCarRenderFactoryModule "未来可扩展的\n自定义模块类"
 ```
 
----
+***
 
 ## 7. 输入系统架构
 
@@ -297,7 +297,7 @@ flowchart LR
     style TRG fill:#1abc9c,color:#fff
 ```
 
----
+***
 
 ## 8. 建议的功能模块划分
 
@@ -347,7 +347,7 @@ graph TB
     style TOOL_MOD fill:#f39c12,color:#fff
 ```
 
----
+***
 
 ## 9. 数据流架构
 
@@ -383,7 +383,7 @@ flowchart TB
     style OUTPUT fill:#3498db,color:#fff
 ```
 
----
+***
 
 ## 10. 技术栈总览
 
@@ -414,15 +414,15 @@ mindmap
       UE Editor
 ```
 
----
+***
 
 ## 快速导航
 
-| 文档 | 路径 | 说明 |
-|------|------|------|
-| 根目录文档 | [Source/AGENTS.md](./AGENTS.md) | 项目整体说明 |
-| 模块文档 | [CarRenderFactory/AGENTS.md](./CarRenderFactory/AGENTS.md) | 主模块详情 |
+| 文档    | 路径                                                         | 说明     |
+| ----- | ---------------------------------------------------------- | ------ |
+| 根目录文档 | [Source/AGENTS.md](./AGENTS.md)                            | 项目整体说明 |
+| 模块文档  | [CarRenderFactory/AGENTS.md](./CarRenderFactory/AGENTS.md) | 主模块详情  |
 
----
+***
 
 *文档生成时间: 2026-03-30*

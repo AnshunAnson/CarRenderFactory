@@ -146,39 +146,3 @@ TArray<APlayerState*> AOTA_GameMode::GetSortedLeaderboard() const
 
     return Result;
 }
-
-float AOTA_GameMode::CalculatePlayerScore(APlayerState* PlayerState) const
-{
-    if (!PlayerState)
-    {
-        return 0.0f;
-    }
-
-    const AOTA_PlayerState* OTAPlayerState = Cast<AOTA_PlayerState>(PlayerState);
-    if (!OTAPlayerState || !OTAPlayerState->GetAttributeSet())
-    {
-        return 0.0f;
-    }
-
-    const UOTA_AttributeSet* Attr = OTAPlayerState->GetAttributeSet();
-    constexpr float KillWeight = 100.0f;
-    constexpr float GoldWeight = 1.0f;
-    return Attr->GetKillCount() * KillWeight + Attr->GetGold() * GoldWeight;
-}
-
-TArray<APlayerState*> AOTA_GameMode::GetSortedLeaderboard() const
-{
-    TArray<APlayerState*> Result;
-    if (!GameState)
-    {
-        return Result;
-    }
-
-    Result = GameState->PlayerArray;
-    Algo::Sort(Result, [this](APlayerState* Lhs, APlayerState* Rhs)
-    {
-        return CalculatePlayerScore(Lhs) > CalculatePlayerScore(Rhs);
-    });
-
-    return Result;
-}

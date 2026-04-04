@@ -2,8 +2,8 @@
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffectExtension.h"
 #include "AbilitySystemBlueprintLibrary.h"
-#include "Character/OTA_Character.h"
-#include "Combat/OTA_CombatTypes.h"
+#include "OTA_Character.h"
+#include "OTA_CombatTypes.h"
 
 UOTA_AttributeSet::UOTA_AttributeSet()
 {
