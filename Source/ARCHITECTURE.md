@@ -1,5 +1,8 @@
 # CarRenderFactory 架构文档
 
+> 架构细分执行文档：`docs/project_architecture_breakdown.md`（用于模块边界、依赖方向、里程碑拆分）。
+> 本文档定位为“总览图谱”，细分规则以执行文档为准。
+
 ## 项目概述
 
 汽车渲染工厂 (CarRenderFactory) 是一个基于 Unreal Engine 5.7 的硬核FPSx东方冷兵器游戏项目。

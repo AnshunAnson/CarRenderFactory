@@ -2,7 +2,7 @@
 
 > 更新时间：2026-04-04
 > 分支：`work`
-> 最近代码提交：`bce5cc5`
+> 最近代码提交：`e3168b3`
 > 维护方式：Subagent 三阶段（Discovery / Implement / Review）
 
 ## 1. 项目阶段总览
@@ -124,3 +124,22 @@
 - [x] 文档结构完整（阶段 / 完成项 / 风险 / 里程碑 / 子代理执行记录）
 - [x] 元信息已与当前仓库状态对齐
 - [ ] 待 UE 环境可用后补充：真实编译日志、PIE 联调截图、回归用例通过记录
+
+---
+
+## 8. 收敛流程维护（2026-04-04）
+
+- 统一推荐入口：`scripts/iter_converge.sh`（支持 `--dry-run` 进行无状态写入验证）。
+- 本轮流程维护目标：
+  1. 轮次收敛执行后同时维护 `iterations/state/current_round.txt` 与 `iterations/LATEST_ROUND` 一致性；
+  2. 每轮自动产出 `iterations/round_N/MANIFEST.md`，便于回溯产物来源；
+  3. 保持“设计文档先行 + patch 快照 + 隔离 workdir”最小闭环。
+- 当前建议：在可用 UE 环境恢复后，先做 **P0 手感主链路**，并在每轮收敛文档中补充“可运行证据”（编译日志、PIE 联调截图、关键用例通过记录）。
+
+---
+
+## 9. 架构细分进展（2026-04-04）
+
+- 已新增《`docs/project_architecture_breakdown.md`》，将当前代码按 Core / Character / Combat / Input+Data / Template Variants / Module Root 六个域进行职责拆分。
+- 已定义长期分层目标（L0-L4）与单向依赖约束，作为后续武器与背包主链路落地的结构前提。
+- 当前执行策略：**先文档细分、后增量迁移**，避免一次性大规模目录搬迁导致风险集中。
