@@ -1,30 +1,35 @@
-# Iteration Round 1 Design (Convergence First)
+# Iteration Round 1 Design (N=1)
 
-## 1) Current Redundancy / Coupling / Risk Points
-- `build_log.txt` is a generated, time-variant artifact checked into version control. It does not participate in Unreal build runtime logic, but creates noise and stale context risk.
-- The repository has no fixed round-level convergence ledger, so iterative changes are harder to trace and replay.
-- There is no explicit minimal-closed-loop definition for this convergence process in-repo, which increases process drift risk.
+## 1) 当前系统核心冗余 / 耦合 / 错误风险点
 
-## 2) Round-1 Reduction & Convergence Strategy
-- Delete non-essential generated artifact (`build_log.txt`) to shrink stale surface and reduce accidental dependency on logs.
-- Add a single round artifact manifest under `iterations/round_1/` as the isolated working output anchor.
-- Keep changes documentation-only + repository hygiene to avoid broad behavioral changes in this first closure step.
+1. 迭代流程只存在于口头要求中，没有落地为可执行最小流程，导致每轮执行方式不一致。
+2. 缺少固定产物路径约定（工作目录、设计文档、diff），容易产生隐式状态和遗漏。
+3. 手工执行“复制上一轮产物 → 修改 → 导出补丁”步骤时，路径分叉多，易操作失误。
 
-## 3) Minimal Closed Loop Kept
-- Core loop preserved: source code + config + deterministic docs only.
-- Iteration contract preserved through:
-  1. design doc (`docs/iter_round_1.md`),
-  2. isolated round manifest (`iterations/round_1/manifest.md`),
-  3. reusable diff patch (`iter_round_1_diff.patch`).
+## 2) 本轮删减 & 收敛策略
 
-## 4) Explicit Delete / Merge / Converge List
-- **Delete**: `build_log.txt`.
-- **Add**: `iterations/round_1/manifest.md`.
-- **Add**: `docs/iter_round_1.md` (this design doc).
+1. **删减隐式流程**：将迭代流程收敛为单一脚本入口，避免多命令分叉。
+2. **收敛产物结构**：统一使用 `tools/convergence/workdirs/iter_round_{N}` 存放每轮隔离副本。
+3. **固化最小闭环**：脚本只做四件事：
+   - 创建新轮次隔离目录
+   - 复制上一轮产物（若存在）
+   - 生成本轮设计文档骨架
+   - 生成本轮 diff 补丁文件
 
-## 5) Target Structure After Iteration
-- Remove volatile generated log from VCS tracked set.
-- Add stable iteration artifacts:
-  - `docs/iter_round_1.md`
-  - `iterations/round_1/manifest.md`
-  - `iter_round_1_diff.patch`
+## 3) 保留的最小闭环定义
+
+最小闭环 = `准备隔离目录` + `设计文档` + `实施改动` + `导出diff`。
+
+本轮仅实现闭环框架，不引入额外业务逻辑。
+
+## 4) 明确删除 / 合并 / 收敛清单
+
+- 删除：无代码删除（本轮先消除“流程隐式化”）。
+- 合并：将分散的手工步骤合并到 `tools/convergence/new_round.sh`。
+- 收敛：统一迭代工作目录与产物命名规范。
+
+## 5) 迭代后目标结构
+
+- `docs/iter_round_1.md`：本轮设计文档。
+- `tools/convergence/new_round.sh`：统一创建下一轮的最小流程脚本。
+- `iter_round_1_diff.patch`：本轮与上一轮的统一 diff 补丁。
