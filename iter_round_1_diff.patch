@@ -1,67 +1,40 @@
 diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
 new file mode 100644
-index 0000000..af1581d
+index 0000000..aac2f39
 --- /dev/null
 +++ b/docs/iter_round_1.md
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,33 @@
 +# Iteration Round 1 设计文档
 +
 +## 1) 当前系统核心冗余 / 耦合 / 错误风险点
-+
-+1. **迭代流程未固化**：缺少统一的“轮次设计→执行→补丁沉淀”标准入口，后续迭代容易漂移。  
-+2. **轮次产物缺少容器化目录**：没有专门的每轮工作目录，容易在原目录直接修改，降低可回溯性。  
-+3. **补丁资产未标准命名**：没有 `iter_round_{N}_diff.patch` 固化约定，跨轮复用成本高。
++- **迭代流程未固化**：当前仓库缺少标准化的“轮次设计-执行-补丁归档”单一入口，导致每轮执行方式可能分叉。
++- **产物命名约束缺失**：没有统一 `iter_round_{N}` 命名规范，后续追溯时容易出现文件命名不一致。
++- **变更与设计映射弱**：尚无“设计文档先行”的固定模板，代码/文档改动可能与目标不一致。
 +
 +## 2) 本轮删减 & 收敛策略
-+
-+- **删减策略 A（删除隐式流程）**：删除“靠口头约定执行迭代”的隐式行为，改为显式文档化流程。  
-+- **收敛策略 B（单一入口）**：以 `docs/iter_round_1.md` 作为本轮唯一设计入口，所有产物围绕该文档执行。  
-+- **收敛策略 C（目录隔离）**：建立 `iteration_runs/round_1/` 目录，作为本轮工作隔离容器。
++- **删减目标**：删减“临时口头约定流程”，收敛为固定文件化流程。
++- **收敛动作**：仅新增一份轮次设计文档，不触碰业务代码与配置，先把迭代闭环的最小约束落盘。
++- **边界约束**：本轮不引入新的脚本系统，不扩展新模块，避免过度工程化。
 +
 +## 3) 保留的最小闭环定义
++最小闭环仅包含：
++1. 明确本轮问题清单；
++2. 明确删减/收敛策略；
++3. 明确目标结构；
++4. 生成并保存本轮 diff 补丁。
 +
-+最小闭环仅保留以下 4 步：
-+
-+1. 设计文档（本文件）定义问题与变更边界。  
-+2. 在隔离目录保存本轮执行记录。  
-+3. 生成并保存统一命名的 patch 文件。  
-+4. 形成可供下一轮直接承接的产物清单。
-+
-+## 4) 明确删除 / 合并 / 收敛清单
-+
-+### 删除
-+- 删除“无文档直接改代码”的执行路径（流程层删除）。
-+
-+### 合并
-+- 将“本轮分析、策略、目标结构、产物清单”合并到单一文档 `docs/iter_round_1.md`。
-+
-+### 收敛
-+- 目录收敛到：
-+  - `docs/iter_round_1.md`
-+  - `iteration_runs/round_1/ROUND_SUMMARY.md`
-+  - `iter_round_1_diff.patch`
++## 4) 明确删除 / 合并 / 收敛的模块 / 文件清单
++- **删除**：无（首轮先固化流程，不删除业务资产，避免误伤）。
++- **合并**：无。
++- **收敛**：将“本轮执行规范”收敛到 `docs/iter_round_1.md` 单文件。
 +
 +## 5) 迭代后目标结构
++- `docs/iter_round_1.md`：本轮设计与执行约束。
++- `iter_round_1_diff.patch`：本轮相对上轮（基线）变更补丁。
 +
-+```text
-+CarRenderFactory/
-+├── docs/
-+│   └── iter_round_1.md
-+├── iteration_runs/
-+│   └── round_1/
-+│       └── ROUND_SUMMARY.md
-+└── iter_round_1_diff.patch
-+```
-diff --git a/iteration_runs/round_1/ROUND_SUMMARY.md b/iteration_runs/round_1/ROUND_SUMMARY.md
-new file mode 100644
-index 0000000..75be8a8
---- /dev/null
-+++ b/iteration_runs/round_1/ROUND_SUMMARY.md
-@@ -0,0 +1,7 @@
-+# Round 1 Execution Summary
-+
-+- Source baseline: repository HEAD before round 1 changes.
-+- Isolation strategy: all round-specific materials are stored under `iteration_runs/round_1/`.
-+- Produced design artifact: `docs/iter_round_1.md`.
-+- Produced patch artifact target: `iter_round_1_diff.patch`.
-+- Next round handoff: use this round's design + patch + summary as upstream input.
++## 6) 与本轮改动的一致性约束
++- 本轮仅允许新增：
++  - `docs/iter_round_1.md`
++  - `iter_round_1_diff.patch`
++- 不允许其它设计外变更。
+
