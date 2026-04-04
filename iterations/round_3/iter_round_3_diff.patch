@@ -1,0 +1,101 @@
+diff --git a/PROJECT_PROGRESS.md b/PROJECT_PROGRESS.md
+index c8bd83b..09132cc 100644
+--- a/PROJECT_PROGRESS.md
++++ b/PROJECT_PROGRESS.md
+@@ -2,7 +2,7 @@
+ 
+ > 更新时间：2026-04-04
+ > 分支：`work`
+-> 最近代码提交：`bce5cc5`
++> 最近代码提交：`e3168b3`
+ > 维护方式：Subagent 三阶段（Discovery / Implement / Review）
+ 
+ ## 1. 项目阶段总览
+@@ -124,3 +124,14 @@
+ - [x] 文档结构完整（阶段 / 完成项 / 风险 / 里程碑 / 子代理执行记录）
+ - [x] 元信息已与当前仓库状态对齐
+ - [ ] 待 UE 环境可用后补充：真实编译日志、PIE 联调截图、回归用例通过记录
++
++---
++
++## 8. 收敛流程维护（2026-04-04）
++
++- 统一推荐入口：`scripts/iter_converge.sh`（支持 `--dry-run` 进行无状态写入验证）。
++- 本轮流程维护目标：
++  1. 轮次收敛执行后同时维护 `iterations/state/current_round.txt` 与 `iterations/LATEST_ROUND` 一致性；
++  2. 每轮自动产出 `iterations/round_N/MANIFEST.md`，便于回溯产物来源；
++  3. 保持“设计文档先行 + patch 快照 + 隔离 workdir”最小闭环。
++- 当前建议：在可用 UE 环境恢复后，先做 **P0 手感主链路**，并在每轮收敛文档中补充“可运行证据”（编译日志、PIE 联调截图、关键用例通过记录）。
+diff --git a/scripts/iter_converge.sh b/scripts/iter_converge.sh
+index c7271d7..53fa97a 100755
+--- a/scripts/iter_converge.sh
++++ b/scripts/iter_converge.sh
+@@ -4,13 +4,22 @@ set -euo pipefail
+ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ STATE_DIR="$ROOT_DIR/iterations/state"
+ STATE_FILE="$STATE_DIR/current_round.txt"
++LATEST_ROUND_FILE="$ROOT_DIR/iterations/LATEST_ROUND"
+ ITER_DIR="$ROOT_DIR/iterations"
++DRY_RUN=0
++
++if [[ "${1:-}" == "--dry-run" ]]; then
++  DRY_RUN=1
++fi
+ 
+ mkdir -p "$STATE_DIR"
+ 
+ if [[ ! -f "$STATE_FILE" ]]; then
+   echo "1" > "$STATE_FILE"
+ fi
++if [[ ! -f "$LATEST_ROUND_FILE" ]]; then
++  echo "1" > "$LATEST_ROUND_FILE"
++fi
+ 
+ ROUND="$(tr -d '[:space:]' < "$STATE_FILE")"
+ if [[ -z "$ROUND" || ! "$ROUND" =~ ^[0-9]+$ ]]; then
+@@ -22,6 +31,7 @@ ROUND_DIR="$ITER_DIR/round_${ROUND}"
+ WORKDIR="$ROUND_DIR/workdir"
+ PATCH_FILE="$ROUND_DIR/iter_round_${ROUND}_diff.patch"
+ DESIGN_DOC="$ROOT_DIR/docs/iter_round_${ROUND}.md"
++MANIFEST_FILE="$ROUND_DIR/MANIFEST.md"
+ 
+ if [[ ! -f "$DESIGN_DOC" ]]; then
+   echo "Missing design doc: $DESIGN_DOC" >&2
+@@ -52,12 +62,34 @@ pushd "$ROOT_DIR" >/dev/null
+ 
+ git diff -- . ':(exclude)iterations' > "$PATCH_FILE"
+ 
++cat > "$MANIFEST_FILE" <<MANIFEST
++# Round ${ROUND} Manifest
++
++- previous_round: $((ROUND - 1))
++- design_doc: docs/iter_round_${ROUND}.md
++- patch_file: iterations/round_${ROUND}/iter_round_${ROUND}_diff.patch
++- workspace: iterations/round_${ROUND}/workdir
++- generated_by: scripts/iter_converge.sh
++MANIFEST
++
+ NEXT_ROUND=$((ROUND + 1))
+-echo "$NEXT_ROUND" > "$STATE_FILE"
++if (( DRY_RUN == 0 )); then
++  echo "$NEXT_ROUND" > "$STATE_FILE"
++  echo "$ROUND" > "$LATEST_ROUND_FILE"
++fi
+ 
+ popd >/dev/null
+ 
+-echo "Round $ROUND complete"
++if (( DRY_RUN == 1 )); then
++  echo "Round $ROUND dry-run complete"
++else
++  echo "Round $ROUND complete"
++fi
+ echo "Workdir: $WORKDIR"
+ echo "Patch: $PATCH_FILE"
+-echo "Next round: $NEXT_ROUND"
++echo "Manifest: $MANIFEST_FILE"
++if (( DRY_RUN == 1 )); then
++  echo "Next round (not written): $NEXT_ROUND"
++else
++  echo "Next round: $NEXT_ROUND"
++fi
