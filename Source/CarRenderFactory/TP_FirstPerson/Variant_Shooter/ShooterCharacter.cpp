@@ -186,12 +186,16 @@ void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 		return;
 	}
 
-	if (UAnimInstance* FirstPersonAnimInstance = GetFirstPersonMesh() ? GetFirstPersonMesh()->GetAnimInstance() : nullptr)
+	USkeletalMeshComponent* FirstPersonMesh = GetFirstPersonMesh();
+	UAnimInstance* FirstPersonAnimInstance = FirstPersonMesh ? FirstPersonMesh->GetAnimInstance() : nullptr;
+	if (FirstPersonAnimInstance)
 	{
 		FirstPersonAnimInstance->Montage_Play(Montage);
 	}
 
-	if (UAnimInstance* ThirdPersonAnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+	UAnimInstance* ThirdPersonAnimInstance = ThirdPersonMesh ? ThirdPersonMesh->GetAnimInstance() : nullptr;
+	if (ThirdPersonAnimInstance)
 	{
 		ThirdPersonAnimInstance->Montage_Play(Montage);
 	}
