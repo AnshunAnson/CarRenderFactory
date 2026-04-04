@@ -1,69 +1,149 @@
---- /dev/null	2026-04-04 17:52:48.061312633 +0000
-+++ docs/iter_round_1.md	2026-04-04 17:54:05.551474693 +0000
-@@ -0,0 +1,45 @@
-+# Iteration Round 1 Design (iter_round_1)
+diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
+new file mode 100644
+index 0000000..1c32531
+--- /dev/null
++++ b/docs/iter_round_1.md
+@@ -0,0 +1,48 @@
++# Iteration Round 1 设计文档
 +
-+## 0) Input/Carry-over Handling
-+- Previous-round artifacts were not found in repository history, so this round treats current `HEAD` as the baseline final artifact.
-+- Isolation strategy for this round: all new outputs are written as standalone artifacts (`docs/` + root patch file), without modifying existing engine/module source paths.
++## 1) 当前系统核心冗余 / 耦合 / 错误风险点
 +
-+## 1) Current Redundancy / Coupling / Error-Risk Points
-+1. The repository lacks a single, versioned convergence-iteration record, causing process ambiguity and operator-dependent behavior.
-+2. No fixed per-round design artifact exists, increasing risk of direct, undocumented edits.
-+3. No canonical local patch artifact (`iter_round_N_diff.patch`) exists, reducing replayability and auditability.
-+4. Iteration protocol is currently implicit in chat instructions rather than concrete in-repo files.
++1. **迭代流程未固化**：当前仓库缺少“轮次化收敛迭代”的单一入口，容易在不同会话中出现流程分叉（有人先改代码、有人先写文档）。
++2. **产物链路不完整**：缺少统一的轮次目录结构与自动补丁产出机制，导致“设计文档 / 代码变更 / diff”无法稳定追溯。
++3. **人工步骤过多**：轮次编号、目录复制、补丁导出靠手工执行，错误面主要来自遗漏与命名不一致。
 +
-+## 2) Deletion & Convergence Strategy (First Principles)
-+- First principle: only retain the minimum closed loop required for reproducible convergence.
-+- Round-1 convergence focuses on **process hardening** before touching runtime code:
-+  - Converge to one explicit round-design doc.
-+  - Converge to one explicit round-output summary.
-+  - Converge to one explicit patch artifact.
-+- Delete/avoid non-essential expansion:
-+  - No new framework code, no additional scripts, no speculative extension points.
-+  - No cross-module engine refactors in this round.
++## 2) 本轮删减 & 收敛策略
 +
-+## 3) Minimal Closed Loop Definition (Round 1)
-+A round is considered minimally closed when all below are present:
-+1. A design document (`docs/iter_round_1.md`).
-+2. Concrete modifications exactly matching the design scope (docs/artifacts only).
-+3. A replayable unified patch (`iter_round_1_diff.patch`).
-+4. A concise result summary (`docs/iter_round_1_summary.md`).
++1. **删减流程分叉**：收敛为单脚本入口 `tools/infinite_convergence.sh`，禁止多种随意执行路径。
++2. **删减隐式状态**：每轮统一写入 `iterations/round_N/`，并将“上一轮来源”显式记录在 `manifest.txt`。
++3. **删减追溯断点**：固定生成 `iter_round_N_diff.patch`，减少人工导出差异时的漏项风险。
 +
-+## 4) Explicit Modify/Delete/Merge List
-+### Create
-+- `docs/iter_round_1.md` (this design)
-+- `docs/iter_round_1_summary.md` (round output summary)
-+- `iter_round_1_diff.patch` (unified diff artifact)
++## 3) 保留的最小闭环定义
 +
-+### Delete / Merge / Converge
-+- Delete: none in round 1 (baseline establishment round).
-+- Merge: process expectations are converged into fixed round artifacts above.
++最小闭环仅保留 4 个动作：
 +
-+## 5) Target Structure After Iteration
-+- `docs/iter_round_1.md`
-+- `docs/iter_round_1_summary.md`
-+- `iter_round_1_diff.patch`
++1. 识别上一轮产物（无则回退到当前仓库快照）。
++2. 创建新轮次工作目录并复制上一轮最终产物。
++3. 创建本轮设计文档模板（必须先于代码变更）。
++4. 导出本轮统一 diff 补丁文件。
 +
-+This yields a smaller error surface for future rounds by enforcing one deterministic, auditable loop contract.
---- /dev/null	2026-04-04 17:52:48.061312633 +0000
-+++ docs/iter_round_1_summary.md	2026-04-04 17:54:05.555474651 +0000
-@@ -0,0 +1,18 @@
-+# Iteration Round 1 Summary
++## 4) 明确删除 / 合并 / 收敛清单
 +
-+## Reduced Non-essential Complexity
-+- Removed process ambiguity by materializing a single design artifact for this round.
-+- Avoided speculative code/config expansion; constrained scope to minimal audit artifacts only.
-+- Standardized round output to deterministic files to prevent ad-hoc operator variance.
++- **收敛**：新增 `tools/infinite_convergence.sh`，合并轮次初始化、复制、模板化文档、补丁导出为一个入口。
++- **收敛**：新增 `iterations/round_1/manifest.txt`，将“来源轮次/来源提交/时间戳”从隐式信息转为显式记录。
++- **收敛**：新增 `iterations/round_1/README.md`，作为 round_1 最终产物说明与后续承接锚点。
++- **新增（必要）**：`docs/iter_round_1.md` 作为本轮设计先行文档。
++- **无代码功能删除**：本轮不触碰 UE 业务代码，先把迭代框架收敛到最小可执行状态。
 +
-+## First-principles Basis for Deletions/Convergence
-+- Anything not required for the minimum reproducible loop was excluded this round.
-+- Prioritized convergence of process state over introduction of new runtime behavior.
++## 5) 迭代后目标结构
 +
-+## Error-surface Reduction Measures
-+- Enforced “design-before-change” through explicit round design doc.
-+- Enforced replayability via round diff patch artifact.
-+- Enforced traceability via fixed naming (`iter_round_1`) and round summary.
++```text
++docs/
++  iter_round_1.md
++iterations/
++  round_1/
++    README.md
++    manifest.txt
++tools/
++  infinite_convergence.sh
++iter_round_1_diff.patch
++```
 +
-+## Next Round Entry
-+- Round 2 should load Round-1 artifacts and continue convergence with deletion-first rule against concrete code/config redundancy.
++## 6) 设计与实现一致性约束
++
++本轮只允许修改上述目标结构中的文件；禁止任何设计外改动。
+diff --git a/iterations/round_1/README.md b/iterations/round_1/README.md
+new file mode 100644
+index 0000000..4f6034f
+--- /dev/null
++++ b/iterations/round_1/README.md
+@@ -0,0 +1,13 @@
++# Round 1 Final Artifact
++
++本轮目标：先固化“无限收敛迭代”的最小流程骨架，不改动 UE 业务逻辑代码。
++
++## 已完成
++- 建立设计先行文档：`docs/iter_round_1.md`
++- 建立轮次产物目录：`iterations/round_1/`
++- 建立可复用执行入口：`tools/infinite_convergence.sh`
++- 生成补丁文件：`iter_round_1_diff.patch`
++
++## 下一轮承接
++- 以上述目录作为“上一轮最终产物”输入。
++- 在 `docs/iter_round_2.md` 中先定义删减/收敛，再执行代码变更。
+diff --git a/iterations/round_1/manifest.txt b/iterations/round_1/manifest.txt
+new file mode 100644
+index 0000000..52f661c
+--- /dev/null
++++ b/iterations/round_1/manifest.txt
+@@ -0,0 +1,5 @@
++round=1
++source_round=0
++source_commit=baseline_uncommitted
++created_at_utc=2026-04-04T00:00:00Z
++purpose=establish_minimal_convergence_loop
+diff --git a/tools/infinite_convergence.sh b/tools/infinite_convergence.sh
+new file mode 100755
+index 0000000..d8d6fdf
+--- /dev/null
++++ b/tools/infinite_convergence.sh
+@@ -0,0 +1,59 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++ITER_DIR="$ROOT_DIR/iterations"
++DOCS_DIR="$ROOT_DIR/docs"
++
++mkdir -p "$ITER_DIR" "$DOCS_DIR"
++
++latest_round="$(find "$ITER_DIR" -maxdepth 1 -type d -name 'round_*' | sed 's#.*/round_##' | sort -n | tail -1 || true)"
++if [[ -z "${latest_round}" ]]; then
++  prev_round=0
++  next_round=1
++else
++  prev_round="$latest_round"
++  next_round=$((prev_round + 1))
++fi
++
++new_round_dir="$ITER_DIR/round_${next_round}"
++mkdir -p "$new_round_dir"
++
++if [[ "$prev_round" -gt 0 ]]; then
++  cp -a "$ITER_DIR/round_${prev_round}/." "$new_round_dir/"
++fi
++
++cat > "$DOCS_DIR/iter_round_${next_round}.md" <<DOC
++# Iteration Round ${next_round} 设计文档
++
++## 当前系统核心冗余 / 耦合 / 错误风险点
++- 待填写
++
++## 本轮删减 & 收敛策略
++- 待填写
++
++## 保留的最小闭环定义
++- 待填写
++
++## 明确删除 / 合并 / 收敛清单
++- 待填写
++
++## 迭代后目标结构
++- 待填写
++DOC
++
++cat > "$new_round_dir/manifest.txt" <<MANIFEST
++round=${next_round}
++source_round=${prev_round}
++source_commit=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)
++created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++purpose=continuous_convergence_iteration
++MANIFEST
++
++patch_file="$ROOT_DIR/iter_round_${next_round}_diff.patch"
++git -C "$ROOT_DIR" diff -- . ":(exclude)$patch_file" > "$patch_file"
++
++echo "Initialized round ${next_round}."
++echo "Design doc: $DOCS_DIR/iter_round_${next_round}.md"
++echo "Round dir:   $new_round_dir"
++echo "Patch file:  $patch_file"

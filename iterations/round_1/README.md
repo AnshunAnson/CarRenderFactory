@@ -1,10 +1,13 @@
-# Round 1 最终产物索引
+# Round 1 Final Artifact
 
-本目录用于固化第 1 轮的最小闭环产物索引：
+本轮目标：先固化“无限收敛迭代”的最小流程骨架，不改动 UE 业务逻辑代码。
 
-- 设计文档：`docs/iter_round_1.md`
-- patch：`iter_round_1_diff.patch`
+## 已完成
+- 建立设计先行文档：`docs/iter_round_1.md`
+- 建立轮次产物目录：`iterations/round_1/`
+- 建立可复用执行入口：`tools/infinite_convergence.sh`
+- 生成补丁文件：`iter_round_1_diff.patch`
 
-说明：
-- Round 1 作为基线轮次，无“上一轮”可复制对象，因此以当前仓库状态作为 `N=1` 输入基线。
-- 从 Round 2 开始，按 `round_{N-1}` 到 `round_{N}` 复制后再改动。
+## 下一轮承接
+- 以上述目录作为“上一轮最终产物”输入。
+- 在 `docs/iter_round_2.md` 中先定义删减/收敛，再执行代码变更。

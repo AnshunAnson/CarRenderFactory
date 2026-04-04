@@ -1,45 +1,48 @@
-# Iteration Round 1 Design (iter_round_1)
+# Iteration Round 1 设计文档
 
-## 0) Input/Carry-over Handling
-- Previous-round artifacts were not found in repository history, so this round treats current `HEAD` as the baseline final artifact.
-- Isolation strategy for this round: all new outputs are written as standalone artifacts (`docs/` + root patch file), without modifying existing engine/module source paths.
+## 1) 当前系统核心冗余 / 耦合 / 错误风险点
 
-## 1) Current Redundancy / Coupling / Error-Risk Points
-1. The repository lacks a single, versioned convergence-iteration record, causing process ambiguity and operator-dependent behavior.
-2. No fixed per-round design artifact exists, increasing risk of direct, undocumented edits.
-3. No canonical local patch artifact (`iter_round_N_diff.patch`) exists, reducing replayability and auditability.
-4. Iteration protocol is currently implicit in chat instructions rather than concrete in-repo files.
+1. **迭代流程未固化**：当前仓库缺少“轮次化收敛迭代”的单一入口，容易在不同会话中出现流程分叉（有人先改代码、有人先写文档）。
+2. **产物链路不完整**：缺少统一的轮次目录结构与自动补丁产出机制，导致“设计文档 / 代码变更 / diff”无法稳定追溯。
+3. **人工步骤过多**：轮次编号、目录复制、补丁导出靠手工执行，错误面主要来自遗漏与命名不一致。
 
-## 2) Deletion & Convergence Strategy (First Principles)
-- First principle: only retain the minimum closed loop required for reproducible convergence.
-- Round-1 convergence focuses on **process hardening** before touching runtime code:
-  - Converge to one explicit round-design doc.
-  - Converge to one explicit round-output summary.
-  - Converge to one explicit patch artifact.
-- Delete/avoid non-essential expansion:
-  - No new framework code, no additional scripts, no speculative extension points.
-  - No cross-module engine refactors in this round.
+## 2) 本轮删减 & 收敛策略
 
-## 3) Minimal Closed Loop Definition (Round 1)
-A round is considered minimally closed when all below are present:
-1. A design document (`docs/iter_round_1.md`).
-2. Concrete modifications exactly matching the design scope (docs/artifacts only).
-3. A replayable unified patch (`iter_round_1_diff.patch`).
-4. A concise result summary (`docs/iter_round_1_summary.md`).
+1. **删减流程分叉**：收敛为单脚本入口 `tools/infinite_convergence.sh`，禁止多种随意执行路径。
+2. **删减隐式状态**：每轮统一写入 `iterations/round_N/`，并将“上一轮来源”显式记录在 `manifest.txt`。
+3. **删减追溯断点**：固定生成 `iter_round_N_diff.patch`，减少人工导出差异时的漏项风险。
 
-## 4) Explicit Modify/Delete/Merge List
-### Create
-- `docs/iter_round_1.md` (this design)
-- `docs/iter_round_1_summary.md` (round output summary)
-- `iter_round_1_diff.patch` (unified diff artifact)
+## 3) 保留的最小闭环定义
 
-### Delete / Merge / Converge
-- Delete: none in round 1 (baseline establishment round).
-- Merge: process expectations are converged into fixed round artifacts above.
+最小闭环仅保留 4 个动作：
 
-## 5) Target Structure After Iteration
-- `docs/iter_round_1.md`
-- `docs/iter_round_1_summary.md`
-- `iter_round_1_diff.patch`
+1. 识别上一轮产物（无则回退到当前仓库快照）。
+2. 创建新轮次工作目录并复制上一轮最终产物。
+3. 创建本轮设计文档模板（必须先于代码变更）。
+4. 导出本轮统一 diff 补丁文件。
 
-This yields a smaller error surface for future rounds by enforcing one deterministic, auditable loop contract.
+## 4) 明确删除 / 合并 / 收敛清单
+
+- **收敛**：新增 `tools/infinite_convergence.sh`，合并轮次初始化、复制、模板化文档、补丁导出为一个入口。
+- **收敛**：新增 `iterations/round_1/manifest.txt`，将“来源轮次/来源提交/时间戳”从隐式信息转为显式记录。
+- **收敛**：新增 `iterations/round_1/README.md`，作为 round_1 最终产物说明与后续承接锚点。
+- **新增（必要）**：`docs/iter_round_1.md` 作为本轮设计先行文档。
+- **无代码功能删除**：本轮不触碰 UE 业务代码，先把迭代框架收敛到最小可执行状态。
+
+## 5) 迭代后目标结构
+
+```text
+docs/
+  iter_round_1.md
+iterations/
+  round_1/
+    README.md
+    manifest.txt
+tools/
+  infinite_convergence.sh
+iter_round_1_diff.patch
+```
+
+## 6) 设计与实现一致性约束
+
+本轮只允许修改上述目标结构中的文件；禁止任何设计外改动。
