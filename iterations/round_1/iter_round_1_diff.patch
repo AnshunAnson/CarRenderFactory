@@ -1,274 +1,116 @@
 diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
 new file mode 100644
-index 0000000..0aeaeea
+index 0000000..7e23745
 --- /dev/null
 +++ b/docs/iter_round_1.md
-@@ -0,0 +1,52 @@
-+# Iteration Round 1 Design (First-Principles Convergence)
+@@ -0,0 +1,34 @@
++# Iteration Round 1 Design (Convergence-First)
 +
-+## 1) 当前系统核心冗余 / 耦合 / 错误风险点
++## 1) Current Redundancy / Coupling / Risk
++- The iteration workflow is purely verbal and manual, causing duplicated human steps and high chance of skipped actions.
++- Round numbering, workspace isolation, and artifact generation are not enforced by code, creating implicit state and branch divergence risk.
++- Patch generation has no standard entrypoint, so results are hard to reproduce.
 +
-+1. **流程定义分散且隐式**：仓库中缺少统一、可执行的“收敛迭代”入口，容易导致不同执行者按各自理解运行。
-+2. **轮次产物缺少固定结构**：没有统一位置保存“设计文档 + diff 补丁 + 上轮快照”，回溯成本高。
-+3. **迭代步骤依赖手工记忆**：复制目录、写文档、导出补丁等步骤若手动执行，极易漏项或顺序错误。
++## 2) This Round's Reduction & Convergence Strategy
++- Converge all mandatory iteration mechanics into a single script entrypoint.
++- Remove manual state branching by storing a single round counter file.
++- Enforce strict directory structure for each round (`iterations/round_N/`) to keep artifacts isolated and traceable.
 +
-+## 2) 本轮删减 & 收敛策略
++## 3) Minimum Closed Loop Kept
++Minimum loop for each round:
++1. Determine round number from one state file.
++2. Create isolated round workspace from previous artifact.
++3. Require a design document before allowing completion.
++4. Emit standardized patch artifact for the round.
++5. Advance state to next round.
 +
-+- **删减分叉执行路径**：将“收敛迭代”收敛为单一脚本入口 `scripts/converge_iter.sh`，避免同一任务多种做法。
-+- **删减隐式命名规则**：脚本强制使用 `iterations/round_N`、`docs/iter_round_N.md`、`iter_round_N_diff.patch` 的固定命名。
-+- **收敛最小闭环**：仅保留四步必需链路：准备轮次目录 → 复制上轮产物 → 生成设计模板 → 生成补丁文件。
++## 4) Explicit Delete / Merge / Converge List
++- **Converge**: scattered manual round operations -> `scripts/iter_converge.sh`.
++- **Delete (process-level)**: manual, ad-hoc numbering and output paths.
++- **Keep**: only required control files:
++  - `docs/iter_round_{N}.md`
++  - `iterations/state/current_round.txt`
++  - `iterations/round_{N}/` artifacts
 +
-+## 3) 保留的最小闭环定义
-+
-+最小可用闭环（MVP）定义：
-+
-+1. 可从仓库根目录一条命令初始化新轮次；
-+2. 新轮次目录中必须有上一轮快照目录；
-+3. 必须生成本轮设计文档模板；
-+4. 必须生成本轮 diff 补丁文件。
-+
-+## 4) 明确删除 / 合并 / 收敛的模块 / 文件清单
-+
-+### 收敛（新增并替代分散人工步骤）
-+- `scripts/converge_iter.sh`：统一执行入口，替代分散人工操作。
-+- `docs/iter_round_1.md`：本轮设计文档，作为“先设计后改动”的强约束。
-+- `iterations/round_1/iter_round_1_diff.patch`：本轮补丁固化产物。
-+
-+### 删除
-+- 本轮**不直接删除业务代码**，优先先收敛执行流程，降低后续改动错误面。
-+
-+## 5) 迭代后目标结构
-+
-+```text
-+repo/
-+├── docs/
-+│   └── iter_round_1.md
-+├── scripts/
-+│   └── converge_iter.sh
-+└── iterations/
-+    └── round_1/
-+        ├── workdir_from_round_0/
-+        └── iter_round_1_diff.patch
-+```
-+
-+## 6) 设计与改动对应关系（强绑定）
-+
-+- 设计中的“单入口收敛” → 代码实现：`scripts/converge_iter.sh`
-+- 设计中的“先设计后改动” → 文档实现：`docs/iter_round_1.md`
-+- 设计中的“产物固化” → 产物实现：`iterations/round_1/iter_round_1_diff.patch`
-diff --git a/iterations/round_1/iter_round_1_diff.patch b/iterations/round_1/iter_round_1_diff.patch
++## 5) Post-Iteration Target Structure
++- `scripts/iter_converge.sh` (single orchestration script)
++- `docs/iter_round_1.md` (design source of truth for this round)
++- `iterations/state/current_round.txt` (single explicit state)
++- `iterations/round_1/workdir/` (isolated copy)
++- `iterations/round_1/iter_round_1_diff.patch` (round artifact)
+diff --git a/iterations/state/current_round.txt b/iterations/state/current_round.txt
 new file mode 100644
-index 0000000..e69de29
-diff --git a/iterations/round_1/workdir_from_round_0/PROJECT_FRAMEWORK.md b/iterations/round_1/workdir_from_round_0/PROJECT_FRAMEWORK.md
-new file mode 100644
-index 0000000..2db5a03
+index 0000000..0cfbf08
 --- /dev/null
-+++ b/iterations/round_1/workdir_from_round_0/PROJECT_FRAMEWORK.md
-@@ -0,0 +1,121 @@
-+# OTA 项目框架图（先行版）
-+
-+> 目标：先把 **FPS射击 + 近战博弈 + 对战 + 武器 + 背包 + 联机** 的工程框架固定下来，确保后续实现不跑偏。
-+
-+---
-+
-+## 1) 总体分层
-+
-+```mermaid
-+flowchart TD
-+    A[输入层 Input<br/>Enhanced Input] --> B[表现层 Character/Animation/FX]
-+    B --> C[玩法层 Combat/Weapon/Inventory/Skill]
-+    C --> D[状态层 GAS/Attribute/Qi]
-+    C --> E[规则层 GameMode/GameState/Ranking]
-+    D --> E
-+    C --> F[网络层 Replication/RPC/Prediction]
-+    D --> F
-+    E --> F
-+    G[配置层 DataTable/Config] --> C
-+    G --> D
-+    G --> E
-+```
-+
-+---
-+
-+## 2) 运行时核心模块（C++）
-+
-+```mermaid
-+graph LR
-+    PC[AOTA_PlayerController] --> CH[AOTA_Character]
-+    CH --> CC[UOTA_CombatComponent]
-+    CH --> QC[UOTA_QiComponent]
-+    CH --> AS[UOTA_AttributeSet]
-+    PS[AOTA_PlayerState] --> ASC[AbilitySystemComponent]
-+    PS --> AS
-+    GM[AOTA_GameMode] --> PS
-+    GM --> LB[Leaderboard/Score]
-+    DT[DataTables/*.csv] --> CFG[OTA_DataTableRows]
-+    CFG --> CH
-+    CFG --> QC
-+    CFG --> GM
-+```
-+
-+---
-+
-+## 3) 主循环（对局）
-+
-+```mermaid
-+sequenceDiagram
-+    participant P as PlayerInput
-+    participant PC as PlayerController
-+    participant C as OTA_Character
-+    participant CB as CombatComponent
-+    participant Q as QiComponent
-+    participant A as AttributeSet
-+    participant GM as GameMode
-+
-+    P->>PC: Move/Look/Attack/Skill
-+    PC->>C: 触发技能或战斗行为
-+    C->>CB: PerformAttackTrace / ApplyDamage
-+    CB->>A: 扣血/倍率计算
-+    C->>Q: 气势变化（命中/受击/摸金）
-+    Q->>A: Qi变更 + 档位效果
-+    A-->>C: 属性更新（Health/Qi/Gold）
-+    GM->>GM: CalculatePlayerScore / 排行更新
-+```
-+
-+---
-+
-+## 4) 联机权威边界（必须固定）
-+
-+- **客户端（预测/输入）**
-+  - 输入采集、镜头、UI 展示
-+  - 允许做轻预测（动画、反馈）
-+- **服务器（权威）**
-+  - 伤害结算
-+  - 技能可用性与冷却
-+  - 属性写入（Health/Qi/Gold/Kill）
-+  - 排行与比赛结束判定
-+
-+```mermaid
-+flowchart LR
-+    CL[Client] -- Input/RPC --> SV[Server Authority]
-+    SV -- Replicated State --> CL
-+    SV --> DMG[Damage & Skill Validation]
-+    SV --> ATTR[Attributes Write]
-+    SV --> SCORE[Score/Match Result]
-+```
-+
-+---
-+
-+## 5) DataTable 框架（策划可直接改）
-+
-+当前建议 4 张核心表：
-+
-+1. `DT_OTA_Skills.csv`：技能消耗、持续、公共CD、特例参数（如冲刺距离）
-+2. `DT_OTA_GoldGrowth.csv`：金币成长档位与倍率
-+3. `DT_OTA_QiLevels.csv`：气势区间与攻速/移速/回气倍率
-+4. `DT_OTA_ScoreRules.csv`：击杀与金币权重
-+
-+对应行结构已在 `Source/CarRenderFactory/Data/OTA_DataTableRows.h`。
-+
-+---
-+
-+## 6) 迭代顺序（先框架后细节）
-+
-+- **Phase A（当前）**：框架锁定（模块职责 + 网络权威 + 表结构）
-+- **Phase B**：P0 主链路（射击/近战手感、武器、背包、联机基础同步）
-+- **Phase C**：P1 稳定化（延迟一致性、断线恢复、排名结算）
-+- **Phase D**：P2 边缘功能（摸金验证开关化）
-+
-+---
-+
-+## 7) 交付物清单（框架阶段）
-+
-+- [x] 架构总图（本文档）
-+- [x] DataTable 结构定义
-+- [x] DataTable 初始数据
-+- [ ] 运行态联机验证（PIE 多人）
-+- [ ] 武器/背包完整链路
-+
-diff --git a/iterations/round_1/workdir_from_round_0/README.md b/iterations/round_1/workdir_from_round_0/README.md
-new file mode 100644
-index 0000000..c890bd7
---- /dev/null
-+++ b/iterations/round_1/workdir_from_round_0/README.md
-@@ -0,0 +1,10 @@
-+# CarRenderFactory
-+
-+Developed with Unreal Engine 5
-+
-+## Docs
-+
-+- 项目进度文档：`PROJECT_PROGRESS.md`
-+- C++ 接入与使用文档：`CPP_USAGE_GUIDE.md`
-+
-+- 项目框架图文档：`PROJECT_FRAMEWORK.md`
-diff --git a/scripts/converge_iter.sh b/scripts/converge_iter.sh
++++ b/iterations/state/current_round.txt
+@@ -0,0 +1 @@
++2
+diff --git a/scripts/iter_converge.sh b/scripts/iter_converge.sh
 new file mode 100755
-index 0000000..c3ffab5
+index 0000000..c7271d7
 --- /dev/null
-+++ b/scripts/converge_iter.sh
-@@ -0,0 +1,64 @@
++++ b/scripts/iter_converge.sh
+@@ -0,0 +1,63 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
-+# Minimal convergence loop bootstrapper.
-+# Usage:
-+#   scripts/converge_iter.sh <round_number>
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++STATE_DIR="$ROOT_DIR/iterations/state"
++STATE_FILE="$STATE_DIR/current_round.txt"
++ITER_DIR="$ROOT_DIR/iterations"
 +
-+if [[ $# -ne 1 ]]; then
-+  echo "Usage: $0 <round_number>" >&2
++mkdir -p "$STATE_DIR"
++
++if [[ ! -f "$STATE_FILE" ]]; then
++  echo "1" > "$STATE_FILE"
++fi
++
++ROUND="$(tr -d '[:space:]' < "$STATE_FILE")"
++if [[ -z "$ROUND" || ! "$ROUND" =~ ^[0-9]+$ ]]; then
++  echo "Invalid round in $STATE_FILE: '$ROUND'" >&2
 +  exit 1
 +fi
 +
-+ROUND="$1"
-+if ! [[ "$ROUND" =~ ^[0-9]+$ ]] || [[ "$ROUND" -lt 1 ]]; then
-+  echo "round_number must be an integer >= 1" >&2
++ROUND_DIR="$ITER_DIR/round_${ROUND}"
++WORKDIR="$ROUND_DIR/workdir"
++PATCH_FILE="$ROUND_DIR/iter_round_${ROUND}_diff.patch"
++DESIGN_DOC="$ROOT_DIR/docs/iter_round_${ROUND}.md"
++
++if [[ ! -f "$DESIGN_DOC" ]]; then
++  echo "Missing design doc: $DESIGN_DOC" >&2
++  echo "Create design doc before code changes." >&2
 +  exit 1
 +fi
 +
-+PREV=$((ROUND - 1))
-+ROUND_DIR="iterations/round_${ROUND}"
-+WORKDIR_COPY="${ROUND_DIR}/workdir_from_round_${PREV}"
-+DESIGN_DOC="docs/iter_round_${ROUND}.md"
-+PATCH_FILE="${ROUND_DIR}/iter_round_${ROUND}_diff.patch"
-+
-+mkdir -p "${WORKDIR_COPY}" docs
-+
-+# Snapshot minimal previous-round artifacts when available.
-+if [[ -d "iterations/round_${PREV}" ]]; then
-+  cp -a "iterations/round_${PREV}/." "${WORKDIR_COPY}/"
-+else
-+  # Round 1 fallback: snapshot key project docs as baseline.
-+  for f in README.md PROJECT_FRAMEWORK.md; do
-+    [[ -f "$f" ]] && cp "$f" "${WORKDIR_COPY}/"
-+  done
++PREV_SOURCE="$ROOT_DIR"
++if (( ROUND > 1 )); then
++  PREV_ROUND=$((ROUND - 1))
++  CANDIDATE="$ITER_DIR/round_${PREV_ROUND}/workdir"
++  if [[ -d "$CANDIDATE" ]]; then
++    PREV_SOURCE="$CANDIDATE"
++  fi
 +fi
 +
-+if [[ ! -f "${DESIGN_DOC}" ]]; then
-+  cat > "${DESIGN_DOC}" <<DOC
-+# Iteration Round ${ROUND} Design
++mkdir -p "$ROUND_DIR"
++rm -rf "$WORKDIR"
++mkdir -p "$WORKDIR"
 +
-+## 当前系统核心冗余 / 耦合 / 错误风险点
-+- TODO
++rsync -a \
++  --exclude '.git' \
++  --exclude 'iterations' \
++  --exclude '.codex' \
++  "$PREV_SOURCE/" "$WORKDIR/"
 +
-+## 本轮删减 & 收敛策略
-+- TODO
++pushd "$ROOT_DIR" >/dev/null
 +
-+## 保留的最小闭环定义
-+- TODO
++git diff -- . ':(exclude)iterations' > "$PATCH_FILE"
 +
-+## 明确删除 / 合并 / 收敛的模块 / 文件清单
-+- TODO
++NEXT_ROUND=$((ROUND + 1))
++echo "$NEXT_ROUND" > "$STATE_FILE"
 +
-+## 迭代后目标结构
-+- TODO
-+DOC
-+fi
++popd >/dev/null
 +
-+mkdir -p "${ROUND_DIR}"
-+git diff > "${PATCH_FILE}" || true
-+
-+echo "Prepared round ${ROUND}:"
-+echo "- design: ${DESIGN_DOC}"
-+echo "- snapshot: ${WORKDIR_COPY}"
-+echo "- patch: ${PATCH_FILE}"
++echo "Round $ROUND complete"
++echo "Workdir: $WORKDIR"
++echo "Patch: $PATCH_FILE"
++echo "Next round: $NEXT_ROUND"

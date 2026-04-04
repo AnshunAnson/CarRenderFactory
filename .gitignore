@@ -15,4 +15,5 @@ Content
 *.xcodeproj
 *.xcworkspace
 
-iterative_artifacts/
+# Iterative convergence artifacts
+iterations/round_*/workdir/

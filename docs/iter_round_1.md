@@ -1,35 +1,34 @@
-# Iteration Round 1 Design (N=1)
+# Iteration Round 1 Design (Convergence-First)
 
-## 1) 当前系统核心冗余 / 耦合 / 错误风险点
+## 1) Current Redundancy / Coupling / Risk
+- The iteration workflow is purely verbal and manual, causing duplicated human steps and high chance of skipped actions.
+- Round numbering, workspace isolation, and artifact generation are not enforced by code, creating implicit state and branch divergence risk.
+- Patch generation has no standard entrypoint, so results are hard to reproduce.
 
-1. 迭代流程只存在于口头要求中，没有落地为可执行最小流程，导致每轮执行方式不一致。
-2. 缺少固定产物路径约定（工作目录、设计文档、diff），容易产生隐式状态和遗漏。
-3. 手工执行“复制上一轮产物 → 修改 → 导出补丁”步骤时，路径分叉多，易操作失误。
+## 2) This Round's Reduction & Convergence Strategy
+- Converge all mandatory iteration mechanics into a single script entrypoint.
+- Remove manual state branching by storing a single round counter file.
+- Enforce strict directory structure for each round (`iterations/round_N/`) to keep artifacts isolated and traceable.
 
-## 2) 本轮删减 & 收敛策略
+## 3) Minimum Closed Loop Kept
+Minimum loop for each round:
+1. Determine round number from one state file.
+2. Create isolated round workspace from previous artifact.
+3. Require a design document before allowing completion.
+4. Emit standardized patch artifact for the round.
+5. Advance state to next round.
 
-1. **删减隐式流程**：将迭代流程收敛为单一脚本入口，避免多命令分叉。
-2. **收敛产物结构**：统一使用 `tools/convergence/workdirs/iter_round_{N}` 存放每轮隔离副本。
-3. **固化最小闭环**：脚本只做四件事：
-   - 创建新轮次隔离目录
-   - 复制上一轮产物（若存在）
-   - 生成本轮设计文档骨架
-   - 生成本轮 diff 补丁文件
+## 4) Explicit Delete / Merge / Converge List
+- **Converge**: scattered manual round operations -> `scripts/iter_converge.sh`.
+- **Delete (process-level)**: manual, ad-hoc numbering and output paths.
+- **Keep**: only required control files:
+  - `docs/iter_round_{N}.md`
+  - `iterations/state/current_round.txt`
+  - `iterations/round_{N}/` artifacts
 
-## 3) 保留的最小闭环定义
-
-最小闭环 = `准备隔离目录` + `设计文档` + `实施改动` + `导出diff`。
-
-本轮仅实现闭环框架，不引入额外业务逻辑。
-
-## 4) 明确删除 / 合并 / 收敛清单
-
-- 删除：无代码删除（本轮先消除“流程隐式化”）。
-- 合并：将分散的手工步骤合并到 `tools/convergence/new_round.sh`。
-- 收敛：统一迭代工作目录与产物命名规范。
-
-## 5) 迭代后目标结构
-
-- `docs/iter_round_1.md`：本轮设计文档。
-- `tools/convergence/new_round.sh`：统一创建下一轮的最小流程脚本。
-- `iter_round_1_diff.patch`：本轮与上一轮的统一 diff 补丁。
+## 5) Post-Iteration Target Structure
+- `scripts/iter_converge.sh` (single orchestration script)
+- `docs/iter_round_1.md` (design source of truth for this round)
+- `iterations/state/current_round.txt` (single explicit state)
+- `iterations/round_1/workdir/` (isolated copy)
+- `iterations/round_1/iter_round_1_diff.patch` (round artifact)
