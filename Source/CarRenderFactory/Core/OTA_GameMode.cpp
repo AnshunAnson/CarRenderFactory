@@ -43,6 +43,8 @@ void AOTA_GameMode::Logout(AController* Exiting)
     }
 
     Super::Logout(Exiting);
+
+    CheckMatchEndConditions();
 }
 
 void AOTA_GameMode::StartMatch()
@@ -100,6 +102,15 @@ void AOTA_GameMode::OnMatchComplete()
 
 void AOTA_GameMode::CheckMatchEndConditions()
 {
+    if (!bMatchInProgress)
+    {
+        return;
+    }
+
+    if (ConnectedPlayers.Num() <= 1)
+    {
+        EndMatch();
+    }
 }
 
 float AOTA_GameMode::CalculatePlayerScore(APlayerState* PlayerState) const
@@ -116,9 +127,7 @@ float AOTA_GameMode::CalculatePlayerScore(APlayerState* PlayerState) const
     }
 
     const UOTA_AttributeSet* Attr = OTAPlayerState->GetAttributeSet();
-    constexpr float KillWeight = 100.0f;
-    constexpr float GoldWeight = 1.0f;
-    return Attr->GetKillCount() * KillWeight + Attr->GetGold() * GoldWeight;
+    return Attr->GetKillCount() * KillScoreWeight + Attr->GetGold() * GoldScoreWeight;
 }
 
 TArray<APlayerState*> AOTA_GameMode::GetSortedLeaderboard() const

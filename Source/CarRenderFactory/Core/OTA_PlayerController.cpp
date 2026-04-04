@@ -1,9 +1,11 @@
 #include "OTA_PlayerController.h"
 #include "Character/OTA_Character.h"
 #include "AbilitySystemComponent.h"
+#include "GameplayTagContainer.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "GameFramework/Character.h"
 
 AOTA_PlayerController::AOTA_PlayerController()
 {
@@ -232,8 +234,10 @@ void AOTA_PlayerController::Skill1()
 {
     if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
     {
-        OTAChar->ActivateQiShield();
-        return;
+        if (OTAChar->ActivateQiShield())
+        {
+            return;
+        }
     }
 
     if (ASC)
@@ -247,8 +251,10 @@ void AOTA_PlayerController::Skill2()
 {
     if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
     {
-        OTAChar->ActivateDash();
-        return;
+        if (OTAChar->ActivateDash())
+        {
+            return;
+        }
     }
 
     if (ASC)
@@ -262,8 +268,10 @@ void AOTA_PlayerController::Skill3()
 {
     if (AOTA_Character* OTAChar = Cast<AOTA_Character>(GetPawn()))
     {
-        OTAChar->ActivateTreasureSense();
-        return;
+        if (OTAChar->ActivateTreasureSense())
+        {
+            return;
+        }
     }
 
     if (ASC)

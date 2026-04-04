@@ -101,7 +101,7 @@ void AOTA_Character::SetCombatState(ECombatState NewState)
 
 void AOTA_Character::ApplyDamage(float Damage, AActor* DamageInstigator)
 {
-    if (!AttributeSet || !ASC)
+    if (GetLocalRole() != ROLE_Authority || !AttributeSet || !ASC || Damage <= 0.0f || !IsAlive())
     {
         return;
     }
@@ -187,7 +187,7 @@ int32 AOTA_Character::GetKillCount() const
 bool AOTA_Character::ActivateQiShield()
 {
     UWorld* World = GetWorld();
-    if (!World || !AttributeSet || IsSkillOnCooldown() || GetQi() < QiShieldCost || GetQi() < SkillDisabledQiThreshold)
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < QiShieldCost || GetQi() < SkillDisabledQiThreshold)
     {
         return false;
     }
@@ -204,7 +204,7 @@ bool AOTA_Character::ActivateQiShield()
 bool AOTA_Character::ActivateDash()
 {
     UWorld* World = GetWorld();
-    if (!World || !AttributeSet || IsSkillOnCooldown() || GetQi() < DashCost || GetQi() < SkillDisabledQiThreshold)
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < DashCost || GetQi() < SkillDisabledQiThreshold)
     {
         return false;
     }
@@ -220,7 +220,7 @@ bool AOTA_Character::ActivateDash()
 bool AOTA_Character::ActivateTreasureSense()
 {
     UWorld* World = GetWorld();
-    if (!World || !AttributeSet || IsSkillOnCooldown() || GetQi() < TreasureSenseCost || GetQi() < SkillDisabledQiThreshold)
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < TreasureSenseCost || GetQi() < SkillDisabledQiThreshold)
     {
         return false;
     }

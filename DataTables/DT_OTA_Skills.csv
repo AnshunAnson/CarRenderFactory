@@ -1,0 +1,4 @@
+Name,SkillId,QiCost,DurationSeconds,SharedCooldownSeconds,ExtraValue
+QiShield,QiShield,20,2,8,1
+Dash,Dash,15,0,8,300
+TreasureSense,TreasureSense,10,5,8,0
