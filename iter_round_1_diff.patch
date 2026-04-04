@@ -1,0 +1,115 @@
+diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
+new file mode 100644
+index 0000000..5fac16b
+--- /dev/null
++++ b/docs/iter_round_1.md
+@@ -0,0 +1,31 @@
++# Iteration Round 1 Design
++
++## 当前系统核心冗余 / 耦合 / 错误风险点
++1. 迭代流程仅存在于口头指令，缺少可执行入口，导致每轮执行步骤可能漂移。
++2. 轮次产物（设计文档、diff、工作目录）命名规则未固化，容易出现人工命名错误。
++3. “复制上轮产物到新目录”没有标准化脚本，容易误改原目录。
++
++## 本轮删减 & 收敛策略
++1. **删减人工步骤**：将轮次目录初始化、产物路径计算、命名规范固化到单一脚本中。
++2. **收敛入口**：统一使用 `scripts/iterative_convergence.sh` 作为唯一流程入口，避免多入口分叉。
++3. **收敛状态表达**：采用轮次目录 `iterations/round_N/` 承载每轮文档与补丁，减少隐式状态。
++
++## 保留的最小闭环定义
++最小可用闭环仅包含：
++1. 轮次目录创建；
++2. 设计文档模板落地；
++3. 基于 Git 工作区生成标准 diff 补丁；
++4. 输出下一轮建议命令。
++
++## 明确删除 / 合并 / 收敛的模块 / 文件清单
++- 新增并收敛到单入口：`scripts/iterative_convergence.sh`
++- 新增并固化本轮设计：`docs/iter_round_1.md`
++- 新增并固化本轮补丁：`iter_round_1_diff.patch`
++
++> 本轮未执行业务代码删除，优先先收敛流程入口，避免对现有 Unreal 工程产生非必要风险。
++
++## 迭代后目标结构
++- `docs/iter_round_1.md`：本轮第一性原理设计依据
++- `scripts/iterative_convergence.sh`：轮次迭代统一入口
++- `iterations/round_1/`：可回溯目录（工作副本与元数据）
++- `iter_round_1_diff.patch`：本轮统一 diff 产物
+diff --git a/iterations/round_1/README.md b/iterations/round_1/README.md
+new file mode 100644
+index 0000000..aa338fd
+--- /dev/null
++++ b/iterations/round_1/README.md
+@@ -0,0 +1,6 @@
++# Round 1 Artifacts
++
++- Source baseline: working tree before Round 1 changes.
++- Design doc: `docs/iter_round_1.md`
++- Patch artifact: `iter_round_1_diff.patch`
++- Repro command for local snapshot: `./scripts/iterative_convergence.sh 1`
+diff --git a/scripts/iterative_convergence.sh b/scripts/iterative_convergence.sh
+new file mode 100755
+index 0000000..037ad3b
+--- /dev/null
++++ b/scripts/iterative_convergence.sh
+@@ -0,0 +1,60 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++round="${1:-1}"
++if ! [[ "$round" =~ ^[0-9]+$ ]]; then
++  echo "Round must be an integer, got: $round" >&2
++  exit 1
++fi
++
++round_dir="iterations/round_${round}"
++mkdir -p "$round_dir"
++
++snapshot_dir="$round_dir/workdir_snapshot"
++mkdir -p "$snapshot_dir"
++
++# 复制当前工程（排除版本库元数据和轮次产物目录本身，避免递归）
++rsync -a --delete \
++  --exclude '.git' \
++  --exclude 'iterations' \
++  --exclude 'Saved' \
++  --exclude 'Intermediate' \
++  ./ "$snapshot_dir/"
++
++# 为本轮生成一个设计文档模板（若不存在）
++doc_path="docs/iter_round_${round}.md"
++if [[ ! -f "$doc_path" ]]; then
++  cat > "$doc_path" <<DOC
++# Iteration Round ${round} Design
++
++## 当前系统核心冗余 / 耦合 / 错误风险点
++- TODO
++
++## 本轮删减 & 收敛策略
++- TODO
++
++## 保留的最小闭环定义
++- TODO
++
++## 明确删除 / 合并 / 收敛的模块 / 文件清单
++- TODO
++
++## 迭代后目标结构
++- TODO
++DOC
++fi
++
++patch_path="iter_round_${round}_diff.patch"
++git diff -- . ":(exclude)$patch_path" > "$patch_path"
++
++cat <<MSG
++[iterative-convergence] round=${round}
++- snapshot: ${snapshot_dir}
++- design:   ${doc_path}
++- diff:     ${patch_path}
++
++Next: implement changes strictly from ${doc_path}, then regenerate ${patch_path}.
++MSG
