@@ -48,7 +48,13 @@ public class CarRenderFactory : ModuleRules
 			System.IO.Path.Combine(ModuleDirectory, "Character"),
 			System.IO.Path.Combine(ModuleDirectory, "Combat"),
 			System.IO.Path.Combine(ModuleDirectory, "Core"),
-			System.IO.Path.Combine(ModuleDirectory, "Input")
+			System.IO.Path.Combine(ModuleDirectory, "Input"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson", "Variant_Horror"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson", "Variant_Shooter"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson", "Variant_Shooter", "AI"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson", "Variant_Shooter", "UI"),
+			System.IO.Path.Combine(ModuleDirectory, "TP_FirstPerson", "Variant_Shooter", "Weapons")
 		});
 
 		PublicDependencyModuleNames.AddRange(new string[] {

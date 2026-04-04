@@ -53,6 +53,13 @@
   - 通过统一函数汇总，避免互相覆盖
 - `GameMode` 已支持基础分数计算与排序接口（击杀 + 金币，后续可替换为“击杀 + 生存 + 携带价值”）
 
+### 2.6 FirstPerson 模板变体收口（Horror / Shooter）
+- 已补齐模板侧残留 stub：
+  - `TP_FirstPersonGameMode`、`HorrorGameMode` 构造逻辑改为显式声明“由蓝图提供具体 Pawn/Controller”
+  - `ShooterCharacter::PlayFiringMontage` 已实现第一/第三人称动画蒙太奇播放
+  - 修复 `ShooterCharacter` 武器第三人称挂点使用错误（从第一人称 Socket 改为第三人称 Socket）
+  - 补充 `CarRenderFactory.Build.cs` 的 `TP_FirstPerson` 相关 PublicIncludePaths，修复部分环境下模板头文件无法解析（如 `TP_FirstPersonCharacter.h`）的问题
+
 ---
 
 ## 3. 当前未完成 / 待验证

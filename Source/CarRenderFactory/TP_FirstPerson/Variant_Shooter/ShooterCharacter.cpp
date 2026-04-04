@@ -175,13 +175,30 @@ void AShooterCharacter::AttachWeaponMeshes(AShooterWeapon* Weapon)
 
 	// attach the weapon meshes
 	Weapon->GetFirstPersonMesh()->AttachToComponent(GetFirstPersonMesh(), AttachmentRule, FirstPersonWeaponSocket);
-	Weapon->GetThirdPersonMesh()->AttachToComponent(GetMesh(), AttachmentRule, FirstPersonWeaponSocket);
+	Weapon->GetThirdPersonMesh()->AttachToComponent(GetMesh(), AttachmentRule, ThirdPersonWeaponSocket);
 	
 }
 
 void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 {
-	// stub
+	if (!Montage)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* FirstPersonMesh = GetFirstPersonMesh();
+	UAnimInstance* FirstPersonAnimInstance = FirstPersonMesh ? FirstPersonMesh->GetAnimInstance() : nullptr;
+	if (FirstPersonAnimInstance)
+	{
+		FirstPersonAnimInstance->Montage_Play(Montage);
+	}
+
+	USkeletalMeshComponent* ThirdPersonMesh = GetMesh();
+	UAnimInstance* ThirdPersonAnimInstance = ThirdPersonMesh ? ThirdPersonMesh->GetAnimInstance() : nullptr;
+	if (ThirdPersonAnimInstance)
+	{
+		ThirdPersonAnimInstance->Montage_Play(Montage);
+	}
 }
 
 void AShooterCharacter::AddWeaponRecoil(float Recoil)
