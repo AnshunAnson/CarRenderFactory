@@ -1,29 +1,37 @@
-# Iteration Round 1 Design
+# Iteration Round 1 Design (Convergence-First)
 
-## 1) Current Redundancy / Coupling / Risk Points
-- **No explicit convergence loop artifact**: the repository lacks a standardized, round-indexed design record for iterative simplification, which increases process drift risk.
-- **Patch output path is implicit**: without a fixed naming convention and persisted patch artifact, each round cannot be reproducibly replayed.
-- **Round handoff is under-specified**: there is no stable definition of "previous round final artifact" as concrete files.
+## 1) Current Redundancy / Coupling / Error-Risk Points
+- The repo has no single executable workflow for “design-first iterative convergence”, so execution relies on manual memory and ad-hoc commands.
+- Round artifacts (design + diff + workspace snapshot path) are not normalized, which increases state branching risk across rounds.
+- There is no deterministic round number allocation; conflicting filenames can silently overwrite prior outputs.
 
-## 2) Round-1 Deletion & Convergence Strategy
-- **Converge process to minimum artifact set**: use one mandatory per-round design doc plus one patch file.
-- **Delete process ambiguity**: remove implicit workflow assumptions by writing an explicit minimal loop contract in this document.
-- **Do not expand runtime code surface**: this round changes only process documentation/output artifacts to reduce execution risk.
+## 2) This Round's Reduction & Convergence Strategy
+- Introduce **one** minimal script to orchestrate a single round lifecycle:
+  1. Allocate round number automatically.
+  2. Clone previous round workspace into a new isolated workspace directory.
+  3. Enforce design-doc-first creation.
+  4. Export unified diff patch for this round.
+- Avoid introducing plugin/framework dependencies; shell + git only.
+- Keep output contract fixed and small to reduce ambiguity.
 
-## 3) Minimal Closed Loop to Keep
-The minimum valid loop for each round N is defined as:
-1. Load previous round artifacts (`docs/iter_round_{N-1}.md` + `iter_round_{N-1}_diff.patch`).
-2. Create current round design doc (`docs/iter_round_{N}.md`).
-3. Apply only design-mapped edits.
-4. Export current diff artifact (`iter_round_{N}_diff.patch`).
-5. Record concise round summary.
+## 3) Preserved Minimum Closed Loop
+Minimum loop retained after this round:
+1. Read previous round output.
+2. Create current round design doc.
+3. Apply modifications in isolated round workspace.
+4. Generate `iter_round_{N}_diff.patch`.
+5. Emit summary instructions for next round handoff.
 
-## 4) Explicit Delete / Merge / Converge File List
-- **Converge into new mandatory file**: `docs/iter_round_1.md` (this file).
-- **Converge into new mandatory artifact**: `iter_round_1_diff.patch` (generated after edits).
-- **No code module merge in Round 1**: to minimize risk, scope is process hardening only.
+## 4) Explicit Delete / Merge / Converge List
+- **Converge**: scattered manual iteration steps → `scripts/iter_converge.sh` single entrypoint.
+- **Delete by replacement**: implicit round naming and manual patch naming conventions.
+- **Not expanded**: no multi-tool orchestration layer, no custom metadata DB, no daemon loop (avoids over-engineering).
 
-## 5) Post-Iteration Target Structure
-- `docs/iter_round_1.md` exists as the authoritative design source for Round 1.
-- `iter_round_1_diff.patch` exists at repository root as reusable patch artifact.
-- Future rounds append the same structure with strictly incremented indices.
+## 5) Target Structure After Iteration
+- `docs/iter_round_1.md` (this design, as traceable baseline)
+- `scripts/iter_converge.sh` (single-round deterministic executor)
+- `iterative_artifacts/round_{N}/...` (runtime-generated, local artifacts)
+
+## 6) Round 1 Completion Notes
+- Added script-based deterministic round scaffolding.
+- Kept loop execution intentionally single-round per invocation to avoid runaway side effects in non-interactive environments while preserving infinite continuation capability via repeated invocation.

@@ -2,104 +2,84 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ITER_DIR="$ROOT_DIR/iterations"
-DOCS_DIR="$ROOT_DIR/docs"
+ARTIFACT_DIR="${ROOT_DIR}/iterative_artifacts"
+mkdir -p "${ARTIFACT_DIR}"
 
-mkdir -p "$ITER_DIR" "$DOCS_DIR"
+next_round() {
+  local max_round
+  max_round="$(find "${ARTIFACT_DIR}" -maxdepth 1 -type d -name 'round_*' -printf '%f\n' 2>/dev/null | sed 's/round_//' | awk 'NF' | sort -n | tail -n 1)"
+  if [[ -z "${max_round}" ]]; then
+    echo 1
+  else
+    echo $((max_round + 1))
+  fi
+}
 
-LATEST_FILE="$ITER_DIR/LATEST_ROUND"
-LAST_ROUND=0
-if [[ -f "$LATEST_FILE" ]]; then
-  LAST_ROUND="$(cat "$LATEST_FILE")"
-fi
-
-if ! [[ "$LAST_ROUND" =~ ^[0-9]+$ ]]; then
-  echo "Invalid round index in $LATEST_FILE: $LAST_ROUND" >&2
+ROUND="${1:-$(next_round)}"
+if ! [[ "${ROUND}" =~ ^[0-9]+$ ]]; then
+  echo "Round must be numeric." >&2
   exit 1
 fi
 
-NEXT_ROUND=$((LAST_ROUND + 1))
-ROUND_DIR="$ITER_DIR/round_${NEXT_ROUND}"
-WORKSPACE_DIR="$ROUND_DIR/workspace"
-mkdir -p "$WORKSPACE_DIR"
+ROUND_DIR="${ARTIFACT_DIR}/round_${ROUND}"
+WORK_DIR="${ROUND_DIR}/workspace"
+DESIGN_DOC="${ROOT_DIR}/docs/iter_round_${ROUND}.md"
+PATCH_FILE="${ROOT_DIR}/iter_round_${ROUND}_diff.patch"
 
-DESIGN_DOC="$DOCS_DIR/iter_round_${NEXT_ROUND}.md"
-if [[ ! -f "$DESIGN_DOC" ]]; then
-  cat > "$DESIGN_DOC" <<DOC
-# Iteration Round ${NEXT_ROUND} Design
+if [[ -e "${ROUND_DIR}" ]]; then
+  echo "${ROUND_DIR} already exists; refusing to overwrite." >&2
+  exit 1
+fi
 
-## 当前系统核心冗余 / 耦合 / 错误风险点
+PREV_ROUND=$((ROUND - 1))
+if (( PREV_ROUND >= 1 )) && [[ -d "${ARTIFACT_DIR}/round_${PREV_ROUND}/workspace" ]]; then
+  SOURCE_DIR="${ARTIFACT_DIR}/round_${PREV_ROUND}/workspace"
+else
+  SOURCE_DIR="${ROOT_DIR}"
+fi
+
+mkdir -p "${WORK_DIR}"
+rsync -a \
+  --exclude '.git' \
+  --exclude 'iterative_artifacts' \
+  --exclude 'Binaries' \
+  --exclude 'DerivedDataCache' \
+  --exclude 'Intermediate' \
+  --exclude 'Saved' \
+  --exclude 'Content' \
+  "${SOURCE_DIR}/" "${WORK_DIR}/"
+
+if [[ ! -f "${DESIGN_DOC}" ]]; then
+  cat > "${DESIGN_DOC}" <<DOC
+# Iteration Round ${ROUND} Design
+
+## Current Redundancy / Coupling / Error Risks
 - TODO
 
-## 本轮删减 & 收敛策略
+## Reduction & Convergence Strategy
 - TODO
 
-## 保留的最小闭环定义
+## Minimum Closed Loop Preserved
 - TODO
 
-## 明确删除 / 合并 / 收敛清单
+## Files/Modules to Delete, Merge, or Converge
 - TODO
 
-## 迭代后目标结构
+## Target Structure
 - TODO
 DOC
 fi
 
-copy_previous_artifacts() {
-  local prev_round="$1"
-  local dest="$2"
+(
+  cd "${ROOT_DIR}"
+  git diff -- . ':(exclude)iter_round_*.patch' > "${PATCH_FILE}" || true
+)
 
-  if [[ "$prev_round" -eq 0 ]]; then
-    cat > "$dest/BASELINE.txt" <<TXT
-Baseline source: repository working tree before round 1.
-TXT
-    return
-  fi
+cat <<MSG
+Round ${ROUND} initialized.
+- Isolated workspace: ${WORK_DIR}
+- Design document: ${DESIGN_DOC}
+- Diff patch: ${PATCH_FILE}
 
-  local prev_dir="$ITER_DIR/round_${prev_round}"
-  mkdir -p "$dest/previous_round"
-
-  if [[ -d "$prev_dir" ]]; then
-    cp -a "$prev_dir" "$dest/previous_round/round_${prev_round}"
-  fi
-
-  local prev_design="$DOCS_DIR/iter_round_${prev_round}.md"
-  local prev_patch="$ROOT_DIR/iter_round_${prev_round}_diff.patch"
-
-  [[ -f "$prev_design" ]] && cp -a "$prev_design" "$dest/"
-  [[ -f "$prev_patch" ]] && cp -a "$prev_patch" "$dest/"
-}
-
-write_patch() {
-  local patch_file="$1"
-  : > "$patch_file"
-
-  git -C "$ROOT_DIR" diff --binary HEAD >> "$patch_file"
-
-  while IFS= read -r untracked; do
-    [[ -z "$untracked" ]] && continue
-    if [[ "$ROOT_DIR/$untracked" == "$patch_file" ]]; then
-      continue
-    fi
-    git -C "$ROOT_DIR" diff --binary --no-index /dev/null "$ROOT_DIR/$untracked" >> "$patch_file" || true
-  done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard)
-}
-
-copy_previous_artifacts "$LAST_ROUND" "$WORKSPACE_DIR"
-
-PATCH_FILE="$ROOT_DIR/iter_round_${NEXT_ROUND}_diff.patch"
-write_patch "$PATCH_FILE"
-
-cat > "$ROUND_DIR/MANIFEST.md" <<META
-# Round ${NEXT_ROUND} Manifest
-
-- previous_round: ${LAST_ROUND}
-- design_doc: docs/iter_round_${NEXT_ROUND}.md
-- patch_file: iter_round_${NEXT_ROUND}_diff.patch
-- workspace: iterations/round_${NEXT_ROUND}/workspace
-- generated_at_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-META
-
-echo "$NEXT_ROUND" > "$LATEST_FILE"
-
-echo "Initialized convergence round ${NEXT_ROUND}."
+Next: apply only design-aligned changes, then rerun to continue with round $((ROUND + 1)).
+MSG
