@@ -37,14 +37,14 @@
 		},
 		{
 			"Name": "UsdCarAssemblyValidator",
-			"Enabled": true,
+			"Enabled": false,
 			"TargetAllowList": [
 				"Editor"
 			]
 		},
 		{
 			"Name": "UsdCarFactoryPipeline",
-			"Enabled": true,
+			"Enabled": false,
 			"TargetAllowList": [
 				"Editor"
 			]

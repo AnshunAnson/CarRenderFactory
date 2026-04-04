@@ -1,11 +1,7 @@
 #include "OTA_GameMode.h"
 #include "OTA_PlayerController.h"
 #include "OTA_PlayerState.h"
-<<<<<<< HEAD
-#include "Core/OTA_AttributeSet.h"
-=======
-#include "Character/OTA_Character.h"
->>>>>>> main
+#include "OTA_AttributeSet.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "GameFramework/GameStateBase.h"
@@ -113,27 +109,16 @@ float AOTA_GameMode::CalculatePlayerScore(APlayerState* PlayerState) const
         return 0.0f;
     }
 
-<<<<<<< HEAD
     const AOTA_PlayerState* OTAPlayerState = Cast<AOTA_PlayerState>(PlayerState);
     if (!OTAPlayerState || !OTAPlayerState->GetAttributeSet())
-=======
-    const AOTA_Character* OTACharacter = Cast<AOTA_Character>(PlayerState->GetPawn());
-    if (!OTACharacter)
->>>>>>> main
     {
         return 0.0f;
     }
 
-<<<<<<< HEAD
     const UOTA_AttributeSet* Attr = OTAPlayerState->GetAttributeSet();
     constexpr float KillWeight = 100.0f;
     constexpr float GoldWeight = 1.0f;
     return Attr->GetKillCount() * KillWeight + Attr->GetGold() * GoldWeight;
-=======
-    constexpr float KillWeight = 100.0f;
-    constexpr float GoldWeight = 1.0f;
-    return OTACharacter->GetKillCount() * KillWeight + OTACharacter->GetGold() * GoldWeight;
->>>>>>> main
 }
 
 TArray<APlayerState*> AOTA_GameMode::GetSortedLeaderboard() const

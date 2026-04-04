@@ -1,6 +1,6 @@
 #include "OTA_AttributeSet.h"
 #include "Net/UnrealNetwork.h"
-#include "GameplayEffect.h"
+#include "GameplayEffectExtension.h"
 #include "AbilitySystemBlueprintLibrary.h"
 
 UOTA_AttributeSet::UOTA_AttributeSet()
