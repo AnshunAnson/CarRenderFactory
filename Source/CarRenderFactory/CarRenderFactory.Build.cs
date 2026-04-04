@@ -178,7 +178,14 @@ public class CarRenderFactory : ModuleRules
 			// NavigationSystem - 导航系统
 			// - 寻路
 			// - 导航网格
-			"NavigationSystem"
+			"NavigationSystem",
+
+			// --------------------------------------------------------
+			// StateTreeModule - 状态树系统 (UE5.4+)
+			// --------------------------------------------------------
+			// - UStateTreeAIComponent
+			// - 状态机 AI
+			"StateTreeModule"
 		});
 
 		// ============================================================

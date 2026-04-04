@@ -146,7 +146,165 @@ void AOTA_Character::ModifyGold(int32 Delta)
         return;
     }
 
-    AttributeSet->SetGold(AttributeSet->GetGold() + Delta);
+    const int32 NewGold = FMath::Max(0, static_cast<int32>(AttributeSet->GetGold()) + Delta);
+    AttributeSet->SetGold(static_cast<float>(NewGold));
+
+    const int32 SafeGoldBuffStep = FMath::Max(1, GoldBuffStep);
+    const int32 GoldStacks = FMath::Clamp(NewGold / SafeGoldBuffStep, 0, MaxGoldBuffStacks);
+    const float AttackMultiplierFromGold = 1.0f + GoldStacks * GoldBuffAttackPerStack;
+    const float QiRegenMultiplierFromGold = 1.0f + GoldStacks * GoldBuffQiRegenPerStack;
+
+    SetGoldAttackMultiplier(AttackMultiplierFromGold);
+    SetGoldRegenMultiplier(QiRegenMultiplierFromGold);
+}
+
+float AOTA_Character::GetQi() const
+{
+    return AttributeSet ? AttributeSet->GetQi() : 0.0f;
+}
+
+float AOTA_Character::GetHealth() const
+{
+    return AttributeSet ? AttributeSet->GetHealth() : 0.0f;
+}
+
+int32 AOTA_Character::GetGold() const
+{
+    return AttributeSet ? static_cast<int32>(AttributeSet->GetGold()) : 0;
+}
+
+float AOTA_Character::GetAttackPowerMultiplier() const
+{
+    return AttributeSet ? AttributeSet->GetAttackPowerMultiplier() : 1.0f;
+}
+
+int32 AOTA_Character::GetKillCount() const
+{
+    return AttributeSet ? static_cast<int32>(AttributeSet->GetKillCount()) : 0;
+}
+
+bool AOTA_Character::ActivateQiShield()
+{
+    UWorld* World = GetWorld();
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < QiShieldCost || GetQi() < SkillDisabledQiThreshold)
+    {
+        return false;
+    }
+
+    ModifyQi(-QiShieldCost);
+    bQiShieldActive = true;
+    SkillCooldownEndTime = World->GetTimeSeconds() + SkillSharedCooldown;
+
+    World->GetTimerManager().ClearTimer(QiShieldTimerHandle);
+    World->GetTimerManager().SetTimer(QiShieldTimerHandle, this, &AOTA_Character::EndQiShield, QiShieldDuration, false);
+    return true;
+}
+
+bool AOTA_Character::ActivateDash()
+{
+    UWorld* World = GetWorld();
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < DashCost || GetQi() < SkillDisabledQiThreshold)
+    {
+        return false;
+    }
+
+    ModifyQi(-DashCost);
+    SkillCooldownEndTime = World->GetTimeSeconds() + SkillSharedCooldown;
+
+    FVector DashTarget = GetActorLocation() + GetActorForwardVector() * DashDistance;
+    SetActorLocation(DashTarget, true);
+    return true;
+}
+
+bool AOTA_Character::ActivateTreasureSense()
+{
+    UWorld* World = GetWorld();
+    if (GetLocalRole() != ROLE_Authority || !World || !AttributeSet || IsSkillOnCooldown() || GetQi() < TreasureSenseCost || GetQi() < SkillDisabledQiThreshold)
+    {
+        return false;
+    }
+
+    ModifyQi(-TreasureSenseCost);
+    bTreasureSenseActive = true;
+    SkillCooldownEndTime = World->GetTimeSeconds() + SkillSharedCooldown;
+
+    World->GetTimerManager().ClearTimer(TreasureSenseTimerHandle);
+    World->GetTimerManager().SetTimer(TreasureSenseTimerHandle, this, &AOTA_Character::EndTreasureSense, TreasureSenseDuration, false);
+    return true;
+}
+
+bool AOTA_Character::IsSkillOnCooldown() const
+{
+    const UWorld* World = GetWorld();
+    return World && World->GetTimeSeconds() < SkillCooldownEndTime;
+}
+
+void AOTA_Character::SetAttackPowerMultiplier(float NewMultiplier)
+{
+    SetQiStateAttackMultiplier(NewMultiplier);
+}
+
+void AOTA_Character::SetMoveSpeedMultiplier(float NewMultiplier)
+{
+    if (AttributeSet)
+    {
+        const float ClampedMultiplier = FMath::Max(0.1f, NewMultiplier);
+        AttributeSet->SetMoveSpeedMultiplier(ClampedMultiplier);
+
+        if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+        {
+            MoveComp->MaxWalkSpeed = BaseWalkSpeed * ClampedMultiplier;
+        }
+    }
+}
+
+void AOTA_Character::SetQiRegenMultiplier(float NewMultiplier)
+{
+    SetQiStateRegenMultiplier(NewMultiplier);
+}
+
+void AOTA_Character::SetQiStateAttackMultiplier(float NewMultiplier)
+{
+    QiStateAttackMultiplier = FMath::Max(0.1f, NewMultiplier);
+    RefreshFinalMultipliers();
+}
+
+void AOTA_Character::SetGoldAttackMultiplier(float NewMultiplier)
+{
+    GoldAttackMultiplier = FMath::Max(0.1f, NewMultiplier);
+    RefreshFinalMultipliers();
+}
+
+void AOTA_Character::SetQiStateRegenMultiplier(float NewMultiplier)
+{
+    QiStateRegenMultiplier = FMath::Max(0.1f, NewMultiplier);
+    RefreshFinalMultipliers();
+}
+
+void AOTA_Character::SetGoldRegenMultiplier(float NewMultiplier)
+{
+    GoldRegenMultiplier = FMath::Max(0.1f, NewMultiplier);
+    RefreshFinalMultipliers();
+}
+
+void AOTA_Character::RefreshFinalMultipliers()
+{
+    if (AttributeSet)
+    {
+        AttributeSet->SetAttackPowerMultiplier(QiStateAttackMultiplier * GoldAttackMultiplier);
+    }
+
+    QiRegenMultiplier = QiStateRegenMultiplier * GoldRegenMultiplier;
+}
+
+void AOTA_Character::EndQiShield()
+{
+    bQiShieldActive = false;
+}
+
+void AOTA_Character::EndTreasureSense()
+{
+    bTreasureSenseActive = false;
 }
 
 void AOTA_Character::OnRep_CurrentMeleeType(EMeleeType OldType)
