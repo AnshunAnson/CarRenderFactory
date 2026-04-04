@@ -34,6 +34,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Game")
     float GetMatchTimeRemaining() const;
 
+    UFUNCTION(BlueprintPure, Category = "Game")
+    float CalculatePlayerScore(APlayerState* PlayerState) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Game")
+    TArray<APlayerState*> GetSortedLeaderboard() const;
+
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game")
     int32 MaxPlayers = 4;
@@ -43,6 +49,12 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game")
     float WarmupDuration = 10.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Score")
+    float KillScoreWeight = 100.0f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Score")
+    float GoldScoreWeight = 1.0f;
 
     UPROPERTY(BlueprintReadOnly, Category = "Game")
     bool bMatchInProgress = false;

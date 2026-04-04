@@ -2,6 +2,8 @@
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffect.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Character/OTA_Character.h"
+#include "Combat/OTA_CombatTypes.h"
 
 UOTA_AttributeSet::UOTA_AttributeSet()
 {
@@ -35,7 +37,10 @@ void UOTA_AttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
     {
         if (GetHealth() <= 0.0f)
         {
-            // TODO: 触发死亡事件
+            if (AOTA_Character* OwnerCharacter = Cast<AOTA_Character>(GetOwningActor()))
+            {
+                OwnerCharacter->SetCombatState(ECombatState::Dead);
+            }
         }
     }
 }
@@ -44,19 +49,22 @@ void UOTA_AttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-    DOREPLIFETIME(UOTA_AttributeSet, Health);
-    DOREPLIFETIME(UOTA_AttributeSet, Qi);
-    DOREPLIFETIME(UOTA_AttributeSet, Gold);
+    DOREPLIFETIME_CONDITION_NOTIFY(UOTA_AttributeSet, Health, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UOTA_AttributeSet, Qi, COND_None, REPNOTIFY_Always);
+    DOREPLIFETIME_CONDITION_NOTIFY(UOTA_AttributeSet, Gold, COND_None, REPNOTIFY_Always);
 }
 
 void UOTA_AttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
 {
+    GAMEPLAYATTRIBUTE_REPNOTIFY(UOTA_AttributeSet, Health, OldValue);
 }
 
 void UOTA_AttributeSet::OnRep_Qi(const FGameplayAttributeData& OldValue)
 {
+    GAMEPLAYATTRIBUTE_REPNOTIFY(UOTA_AttributeSet, Qi, OldValue);
 }
 
 void UOTA_AttributeSet::OnRep_Gold(const FGameplayAttributeData& OldValue)
 {
+    GAMEPLAYATTRIBUTE_REPNOTIFY(UOTA_AttributeSet, Gold, OldValue);
 }
