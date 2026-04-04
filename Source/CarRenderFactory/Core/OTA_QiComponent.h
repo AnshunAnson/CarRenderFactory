@@ -25,6 +25,7 @@ class CARRENDERFACTORY_API UOTA_QiComponent : public UActorComponent
 public:
     UOTA_QiComponent();
 
+    virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
     UFUNCTION(BlueprintPure, Category = "Qi")

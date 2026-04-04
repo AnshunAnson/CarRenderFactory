@@ -2,6 +2,8 @@
 #include "Net/UnrealNetwork.h"
 #include "GameplayEffect.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Character/OTA_Character.h"
+#include "Combat/OTA_CombatTypes.h"
 
 UOTA_AttributeSet::UOTA_AttributeSet()
 {
@@ -35,7 +37,10 @@ void UOTA_AttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallba
     {
         if (GetHealth() <= 0.0f)
         {
-            // TODO: 触发死亡事件
+            if (AOTA_Character* OwnerCharacter = Cast<AOTA_Character>(GetOwningActor()))
+            {
+                OwnerCharacter->SetCombatState(ECombatState::Dead);
+            }
         }
     }
 }
