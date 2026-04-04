@@ -14,7 +14,7 @@ class UShooterUI;
  *  Keeps track of team scores
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterGameMode : public AGameModeBase
+class CARRENDERFACTORY_API AShooterGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 	

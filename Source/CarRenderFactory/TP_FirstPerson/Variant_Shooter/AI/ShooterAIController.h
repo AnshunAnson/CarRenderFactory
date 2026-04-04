@@ -17,7 +17,7 @@ DECLARE_DELEGATE_OneParam(FShooterPerceptionForgottenDelegate, AActor*);
  *  Simple AI Controller for a first person shooter enemy
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterAIController : public AAIController
+class CARRENDERFACTORY_API AShooterAIController : public AAIController
 {
 	GENERATED_BODY()
 	

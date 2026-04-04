@@ -10,7 +10,7 @@
  *  Simple scoreboard UI for a first person shooter game
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API UShooterUI : public UUserWidget
+class CARRENDERFACTORY_API UShooterUI : public UUserWidget
 {
 	GENERATED_BODY()
 	

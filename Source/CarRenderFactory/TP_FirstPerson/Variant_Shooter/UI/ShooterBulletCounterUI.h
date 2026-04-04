@@ -10,7 +10,7 @@
  *  Simple bullet counter UI widget for a first person shooter game
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API UShooterBulletCounterUI : public UUserWidget
+class CARRENDERFACTORY_API UShooterBulletCounterUI : public UUserWidget
 {
 	GENERATED_BODY()
 	

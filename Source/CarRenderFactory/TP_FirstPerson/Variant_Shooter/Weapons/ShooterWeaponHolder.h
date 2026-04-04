@@ -20,7 +20,7 @@ class UShooterWeaponHolder : public UInterface
 /**
  *  Common interface for Shooter Game weapon holder classes
  */
-class TP_FIRSTPERSON_API IShooterWeaponHolder
+class CARRENDERFACTORY_API IShooterWeaponHolder
 {
 	GENERATED_BODY()
 

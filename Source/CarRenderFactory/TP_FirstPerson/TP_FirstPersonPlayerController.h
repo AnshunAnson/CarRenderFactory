@@ -15,7 +15,7 @@ class UUserWidget;
  *  Overrides the Player Camera Manager class.
  */
 UCLASS(abstract, config="Game")
-class TP_FIRSTPERSON_API ATP_FirstPersonPlayerController : public APlayerController
+class CARRENDERFACTORY_API ATP_FirstPersonPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 	

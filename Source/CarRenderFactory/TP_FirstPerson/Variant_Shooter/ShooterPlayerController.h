@@ -16,7 +16,7 @@ class UShooterBulletCounterUI;
  *  Respawns the player pawn when it's destroyed
  */
 UCLASS(abstract, config="Game")
-class TP_FIRSTPERSON_API AShooterPlayerController : public APlayerController
+class CARRENDERFACTORY_API AShooterPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 	

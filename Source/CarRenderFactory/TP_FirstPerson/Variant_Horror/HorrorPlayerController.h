@@ -15,7 +15,7 @@ class UHorrorUI;
  *  Manages UI
  */
 UCLASS(abstract, config="Game")
-class TP_FIRSTPERSON_API AHorrorPlayerController : public APlayerController
+class CARRENDERFACTORY_API AHorrorPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 	

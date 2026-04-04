@@ -52,7 +52,7 @@ void AOTA_Character::OnRep_PlayerState()
 
     if (ASC)
     {
-        ASC->InitAbilityActorInfo(GetPlayerState(), this);
+        ASC->InitAbilityActorInfo(this, this);
     }
 }
 

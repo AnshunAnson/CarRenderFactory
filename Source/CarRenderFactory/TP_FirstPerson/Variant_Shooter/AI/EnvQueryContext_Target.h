@@ -10,7 +10,7 @@
  *  Custom EnvQuery Context that returns the actor currently targeted by an NPC
  */
 UCLASS()
-class TP_FIRSTPERSON_API UEnvQueryContext_Target : public UEnvQueryContext
+class CARRENDERFACTORY_API UEnvQueryContext_Target : public UEnvQueryContext
 {
 	GENERATED_BODY()
 	

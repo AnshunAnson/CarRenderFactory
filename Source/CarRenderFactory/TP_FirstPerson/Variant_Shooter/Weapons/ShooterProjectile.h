@@ -15,7 +15,7 @@ class UPrimitiveComponent;
  *  Simple projectile class for a first person shooter game
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterProjectile : public AActor
+class CARRENDERFACTORY_API AShooterProjectile : public AActor
 {
 	GENERATED_BODY()
 	

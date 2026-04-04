@@ -13,7 +13,7 @@ class AHorrorCharacter;
  *  Manages character sprint meter display
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API UHorrorUI : public UUserWidget
+class CARRENDERFACTORY_API UHorrorUI : public UUserWidget
 {
 	GENERATED_BODY()
 	

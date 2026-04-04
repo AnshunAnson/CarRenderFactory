@@ -21,7 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDamagedDelegate, float, LifePercent
  *  Manages health and death
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterCharacter : public ATP_FirstPersonCharacter, public IShooterWeaponHolder
+class CARRENDERFACTORY_API AShooterCharacter : public ATP_FirstPersonCharacter, public IShooterWeaponHolder
 {
 	GENERATED_BODY()
 	

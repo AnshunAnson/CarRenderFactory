@@ -17,7 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSprintStateChangedDelegate, bool, b
  *  Provides stamina-based sprinting
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AHorrorCharacter : public ATP_FirstPersonCharacter
+class CARRENDERFACTORY_API AHorrorCharacter : public ATP_FirstPersonCharacter
 {
 	GENERATED_BODY()
 

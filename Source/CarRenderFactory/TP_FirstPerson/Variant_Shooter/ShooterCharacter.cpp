@@ -186,8 +186,8 @@ void AShooterCharacter::PlayFiringMontage(UAnimMontage* Montage)
 		return;
 	}
 
-	USkeletalMeshComponent* FirstPersonMesh = GetFirstPersonMesh();
-	UAnimInstance* FirstPersonAnimInstance = FirstPersonMesh ? FirstPersonMesh->GetAnimInstance() : nullptr;
+	USkeletalMeshComponent* LocalFirstPersonMesh = GetFirstPersonMesh();
+	UAnimInstance* FirstPersonAnimInstance = LocalFirstPersonMesh ? LocalFirstPersonMesh->GetAnimInstance() : nullptr;
 	if (FirstPersonAnimInstance)
 	{
 		FirstPersonAnimInstance->Montage_Play(Montage);

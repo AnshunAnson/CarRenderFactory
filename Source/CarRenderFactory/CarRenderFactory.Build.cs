@@ -45,6 +45,7 @@ public class CarRenderFactory : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicIncludePaths.AddRange(new string[] {
+			ModuleDirectory,
 			System.IO.Path.Combine(ModuleDirectory, "Character"),
 			System.IO.Path.Combine(ModuleDirectory, "Combat"),
 			System.IO.Path.Combine(ModuleDirectory, "Core"),
@@ -210,6 +211,9 @@ public class CarRenderFactory : ModuleRules
 			// Slate UI 框架
 			"Slate",
 			"SlateCore",
+
+			// UMG - Unreal Motion Graphics UI 系统
+			"UMG",
 
 			// Niagara 特效系统
 			"Niagara",

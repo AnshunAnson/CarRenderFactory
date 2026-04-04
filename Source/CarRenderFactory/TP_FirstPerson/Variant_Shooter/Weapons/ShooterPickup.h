@@ -33,7 +33,7 @@ struct FWeaponTableRow : public FTableRowBase
  *  Simple shooter game weapon pickup
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterPickup : public AActor
+class CARRENDERFACTORY_API AShooterPickup : public AActor
 {
 	GENERATED_BODY()
 

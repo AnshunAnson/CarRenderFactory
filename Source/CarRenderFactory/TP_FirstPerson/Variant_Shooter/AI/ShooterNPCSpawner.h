@@ -15,7 +15,7 @@ class AShooterNPC;
  *  NPCs will be spawned one by one, and the spawner will wait until it dies before spawning a new one.
  */
 UCLASS()
-class TP_FIRSTPERSON_API AShooterNPCSpawner : public AActor
+class CARRENDERFACTORY_API AShooterNPCSpawner : public AActor
 {
 	GENERATED_BODY()
 	

@@ -10,7 +10,7 @@
  *  Simple GameMode for a first person horror game
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AHorrorGameMode : public AGameModeBase
+class CARRENDERFACTORY_API AHorrorGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 	

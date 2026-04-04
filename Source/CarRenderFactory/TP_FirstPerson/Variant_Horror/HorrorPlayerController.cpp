@@ -7,7 +7,7 @@
 #include "InputMappingContext.h"
 #include "TP_FirstPersonCameraManager.h"
 #include "HorrorCharacter.h"
-#include "HorrorUI.h"
+#include "Variant_Horror/UI/HorrorUI.h"
 #include "CarRenderFactory.h"
 #include "TP_FirstPerson.h"
 #include "Widgets/Input/SVirtualJoystick.h"

@@ -21,7 +21,7 @@ class UAnimInstance;
  *  Interacts with the weapon owner through the ShooterWeaponHolder interface
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterWeapon : public AActor
+class CARRENDERFACTORY_API AShooterWeapon : public AActor
 {
 	GENERATED_BODY()
 	

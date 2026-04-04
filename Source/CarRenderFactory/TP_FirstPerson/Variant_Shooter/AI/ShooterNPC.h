@@ -17,7 +17,7 @@ class AShooterWeapon;
  *  Holds and manages a weapon
  */
 UCLASS(abstract)
-class TP_FIRSTPERSON_API AShooterNPC : public ATP_FirstPersonCharacter, public IShooterWeaponHolder
+class CARRENDERFACTORY_API AShooterNPC : public ATP_FirstPersonCharacter, public IShooterWeaponHolder
 {
 	GENERATED_BODY()
 

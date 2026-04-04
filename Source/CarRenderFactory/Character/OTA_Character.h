@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
-#include "Combat/OTA_CombatTypes.h"
+#include "OTA_CombatTypes.h"
 #include "OTA_Character.generated.h"
 
 class UAbilitySystemComponent;
