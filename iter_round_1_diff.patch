@@ -1,6 +1,6 @@
 diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
 new file mode 100644
-index 0000000..1c32531
+index 0000000..af1581d
 --- /dev/null
 +++ b/docs/iter_round_1.md
 @@ -0,0 +1,48 @@
@@ -8,142 +8,60 @@ index 0000000..1c32531
 +
 +## 1) 当前系统核心冗余 / 耦合 / 错误风险点
 +
-+1. **迭代流程未固化**：当前仓库缺少“轮次化收敛迭代”的单一入口，容易在不同会话中出现流程分叉（有人先改代码、有人先写文档）。
-+2. **产物链路不完整**：缺少统一的轮次目录结构与自动补丁产出机制，导致“设计文档 / 代码变更 / diff”无法稳定追溯。
-+3. **人工步骤过多**：轮次编号、目录复制、补丁导出靠手工执行，错误面主要来自遗漏与命名不一致。
++1. **迭代流程未固化**：缺少统一的“轮次设计→执行→补丁沉淀”标准入口，后续迭代容易漂移。  
++2. **轮次产物缺少容器化目录**：没有专门的每轮工作目录，容易在原目录直接修改，降低可回溯性。  
++3. **补丁资产未标准命名**：没有 `iter_round_{N}_diff.patch` 固化约定，跨轮复用成本高。
 +
 +## 2) 本轮删减 & 收敛策略
 +
-+1. **删减流程分叉**：收敛为单脚本入口 `tools/infinite_convergence.sh`，禁止多种随意执行路径。
-+2. **删减隐式状态**：每轮统一写入 `iterations/round_N/`，并将“上一轮来源”显式记录在 `manifest.txt`。
-+3. **删减追溯断点**：固定生成 `iter_round_N_diff.patch`，减少人工导出差异时的漏项风险。
++- **删减策略 A（删除隐式流程）**：删除“靠口头约定执行迭代”的隐式行为，改为显式文档化流程。  
++- **收敛策略 B（单一入口）**：以 `docs/iter_round_1.md` 作为本轮唯一设计入口，所有产物围绕该文档执行。  
++- **收敛策略 C（目录隔离）**：建立 `iteration_runs/round_1/` 目录，作为本轮工作隔离容器。
 +
 +## 3) 保留的最小闭环定义
 +
-+最小闭环仅保留 4 个动作：
++最小闭环仅保留以下 4 步：
 +
-+1. 识别上一轮产物（无则回退到当前仓库快照）。
-+2. 创建新轮次工作目录并复制上一轮最终产物。
-+3. 创建本轮设计文档模板（必须先于代码变更）。
-+4. 导出本轮统一 diff 补丁文件。
++1. 设计文档（本文件）定义问题与变更边界。  
++2. 在隔离目录保存本轮执行记录。  
++3. 生成并保存统一命名的 patch 文件。  
++4. 形成可供下一轮直接承接的产物清单。
 +
 +## 4) 明确删除 / 合并 / 收敛清单
 +
-+- **收敛**：新增 `tools/infinite_convergence.sh`，合并轮次初始化、复制、模板化文档、补丁导出为一个入口。
-+- **收敛**：新增 `iterations/round_1/manifest.txt`，将“来源轮次/来源提交/时间戳”从隐式信息转为显式记录。
-+- **收敛**：新增 `iterations/round_1/README.md`，作为 round_1 最终产物说明与后续承接锚点。
-+- **新增（必要）**：`docs/iter_round_1.md` 作为本轮设计先行文档。
-+- **无代码功能删除**：本轮不触碰 UE 业务代码，先把迭代框架收敛到最小可执行状态。
++### 删除
++- 删除“无文档直接改代码”的执行路径（流程层删除）。
++
++### 合并
++- 将“本轮分析、策略、目标结构、产物清单”合并到单一文档 `docs/iter_round_1.md`。
++
++### 收敛
++- 目录收敛到：
++  - `docs/iter_round_1.md`
++  - `iteration_runs/round_1/ROUND_SUMMARY.md`
++  - `iter_round_1_diff.patch`
 +
 +## 5) 迭代后目标结构
 +
 +```text
-+docs/
-+  iter_round_1.md
-+iterations/
-+  round_1/
-+    README.md
-+    manifest.txt
-+tools/
-+  infinite_convergence.sh
-+iter_round_1_diff.patch
++CarRenderFactory/
++├── docs/
++│   └── iter_round_1.md
++├── iteration_runs/
++│   └── round_1/
++│       └── ROUND_SUMMARY.md
++└── iter_round_1_diff.patch
 +```
-+
-+## 6) 设计与实现一致性约束
-+
-+本轮只允许修改上述目标结构中的文件；禁止任何设计外改动。
-diff --git a/iterations/round_1/README.md b/iterations/round_1/README.md
+diff --git a/iteration_runs/round_1/ROUND_SUMMARY.md b/iteration_runs/round_1/ROUND_SUMMARY.md
 new file mode 100644
-index 0000000..4f6034f
+index 0000000..75be8a8
 --- /dev/null
-+++ b/iterations/round_1/README.md
-@@ -0,0 +1,13 @@
-+# Round 1 Final Artifact
++++ b/iteration_runs/round_1/ROUND_SUMMARY.md
+@@ -0,0 +1,7 @@
++# Round 1 Execution Summary
 +
-+本轮目标：先固化“无限收敛迭代”的最小流程骨架，不改动 UE 业务逻辑代码。
-+
-+## 已完成
-+- 建立设计先行文档：`docs/iter_round_1.md`
-+- 建立轮次产物目录：`iterations/round_1/`
-+- 建立可复用执行入口：`tools/infinite_convergence.sh`
-+- 生成补丁文件：`iter_round_1_diff.patch`
-+
-+## 下一轮承接
-+- 以上述目录作为“上一轮最终产物”输入。
-+- 在 `docs/iter_round_2.md` 中先定义删减/收敛，再执行代码变更。
-diff --git a/iterations/round_1/manifest.txt b/iterations/round_1/manifest.txt
-new file mode 100644
-index 0000000..52f661c
---- /dev/null
-+++ b/iterations/round_1/manifest.txt
-@@ -0,0 +1,5 @@
-+round=1
-+source_round=0
-+source_commit=baseline_uncommitted
-+created_at_utc=2026-04-04T00:00:00Z
-+purpose=establish_minimal_convergence_loop
-diff --git a/tools/infinite_convergence.sh b/tools/infinite_convergence.sh
-new file mode 100755
-index 0000000..d8d6fdf
---- /dev/null
-+++ b/tools/infinite_convergence.sh
-@@ -0,0 +1,59 @@
-+#!/usr/bin/env bash
-+set -euo pipefail
-+
-+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-+ITER_DIR="$ROOT_DIR/iterations"
-+DOCS_DIR="$ROOT_DIR/docs"
-+
-+mkdir -p "$ITER_DIR" "$DOCS_DIR"
-+
-+latest_round="$(find "$ITER_DIR" -maxdepth 1 -type d -name 'round_*' | sed 's#.*/round_##' | sort -n | tail -1 || true)"
-+if [[ -z "${latest_round}" ]]; then
-+  prev_round=0
-+  next_round=1
-+else
-+  prev_round="$latest_round"
-+  next_round=$((prev_round + 1))
-+fi
-+
-+new_round_dir="$ITER_DIR/round_${next_round}"
-+mkdir -p "$new_round_dir"
-+
-+if [[ "$prev_round" -gt 0 ]]; then
-+  cp -a "$ITER_DIR/round_${prev_round}/." "$new_round_dir/"
-+fi
-+
-+cat > "$DOCS_DIR/iter_round_${next_round}.md" <<DOC
-+# Iteration Round ${next_round} 设计文档
-+
-+## 当前系统核心冗余 / 耦合 / 错误风险点
-+- 待填写
-+
-+## 本轮删减 & 收敛策略
-+- 待填写
-+
-+## 保留的最小闭环定义
-+- 待填写
-+
-+## 明确删除 / 合并 / 收敛清单
-+- 待填写
-+
-+## 迭代后目标结构
-+- 待填写
-+DOC
-+
-+cat > "$new_round_dir/manifest.txt" <<MANIFEST
-+round=${next_round}
-+source_round=${prev_round}
-+source_commit=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)
-+created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-+purpose=continuous_convergence_iteration
-+MANIFEST
-+
-+patch_file="$ROOT_DIR/iter_round_${next_round}_diff.patch"
-+git -C "$ROOT_DIR" diff -- . ":(exclude)$patch_file" > "$patch_file"
-+
-+echo "Initialized round ${next_round}."
-+echo "Design doc: $DOCS_DIR/iter_round_${next_round}.md"
-+echo "Round dir:   $new_round_dir"
-+echo "Patch file:  $patch_file"
++- Source baseline: repository HEAD before round 1 changes.
++- Isolation strategy: all round-specific materials are stored under `iteration_runs/round_1/`.
++- Produced design artifact: `docs/iter_round_1.md`.
++- Produced patch artifact target: `iter_round_1_diff.patch`.
++- Next round handoff: use this round's design + patch + summary as upstream input.
