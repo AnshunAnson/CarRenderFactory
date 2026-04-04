@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
-#include "OTA_CombatTypes.h"
+#include "Combat/OTA_CombatTypes.h"
 #include "OTA_Character.generated.h"
 
 class UAbilitySystemComponent;
@@ -49,6 +49,15 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Loot")
     void ModifyGold(int32 Delta);
+
+    UFUNCTION(BlueprintPure, Category = "Attributes")
+    float GetQi() const;
+
+    UFUNCTION(BlueprintPure, Category = "Attributes")
+    float GetHealth() const;
+
+    UFUNCTION(BlueprintPure, Category = "Attributes")
+    int32 GetGold() const;
 
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

@@ -1,8 +1,8 @@
 #include "OTA_Character.h"
 #include "AbilitySystemComponent.h"
-#include "OTA_AttributeSet.h"
-#include "OTA_CombatComponent.h"
-#include "OTA_QiComponent.h"
+#include "Core/OTA_AttributeSet.h"
+#include "Combat/OTA_CombatComponent.h"
+#include "Core/OTA_QiComponent.h"
 #include "Net/UnrealNetwork.h"
 
 AOTA_Character::AOTA_Character()
@@ -125,6 +125,21 @@ void AOTA_Character::ModifyGold(int32 Delta)
     }
 
     AttributeSet->SetGold(AttributeSet->GetGold() + Delta);
+}
+
+float AOTA_Character::GetQi() const
+{
+    return AttributeSet ? AttributeSet->GetQi() : 0.0f;
+}
+
+float AOTA_Character::GetHealth() const
+{
+    return AttributeSet ? AttributeSet->GetHealth() : 0.0f;
+}
+
+int32 AOTA_Character::GetGold() const
+{
+    return AttributeSet ? static_cast<int32>(AttributeSet->GetGold()) : 0;
 }
 
 void AOTA_Character::OnRep_CurrentMeleeType(EMeleeType OldType)

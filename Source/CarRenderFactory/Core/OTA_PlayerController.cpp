@@ -187,17 +187,17 @@ void AOTA_PlayerController::Look(const FInputActionValue& Value)
 
 void AOTA_PlayerController::Jump()
 {
-    if (APawn* ControlledPawn = GetPawn())
+    if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
     {
-        ControlledPawn->Jump();
+        ControlledCharacter->Jump();
     }
 }
 
 void AOTA_PlayerController::StopJumping()
 {
-    if (APawn* ControlledPawn = GetPawn())
+    if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
     {
-        ControlledPawn->StopJumping();
+        ControlledCharacter->StopJumping();
     }
 }
 
