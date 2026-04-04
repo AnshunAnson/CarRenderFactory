@@ -1,61 +1,53 @@
 diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
 new file mode 100644
-index 0000000..18161cf
+index 0000000..f0cc044
 --- /dev/null
 +++ b/docs/iter_round_1.md
-@@ -0,0 +1,39 @@
-+# Iteration Round 1 设计文档
+@@ -0,0 +1,31 @@
++# Iteration Round 1 Design
 +
-+## 1) 当前系统核心冗余 / 耦合 / 错误风险点
++## 1) Current redundancy / coupling / risk points
++- The repo has no fixed artifact contract for "iteration round" outputs, so each round can drift in structure and naming.
++- There is no explicit, versioned handoff document linking: design doc, workspace snapshot, and diff patch.
++- The requested convergence loop exists only in chat text, which creates execution ambiguity and increases human error risk.
 +
-+1. 迭代流程目前仅存在于自然语言指令中，缺乏可复用的结构化落盘，导致执行口径容易漂移。
-+2. “上一轮产物 -> 新工作目录 -> 设计 -> 改动 -> patch”闭环没有统一目录约束，后续轮次可追溯性弱。
-+3. 轮次产物命名规则未固化，容易出现人工命名分叉（round1 / r1 / iter-1）。
++## 2) This round's deletion & convergence strategy
++- **Delete ambiguity**, not product code: converge round artifacts into a single deterministic folder schema.
++- Introduce the minimum required files for a reusable closed loop:
++  1. round design (`docs/iter_round_1.md`)
++  2. round workspace handoff marker (`iterations/round_1/ROUND_CONTEXT.md`)
++  3. round diff patch (`iter_round_1_diff.patch`)
++- Avoid adding new runtime modules, scripts, or config branches in this round.
 +
-+## 2) 本轮删减 & 收敛策略
++## 3) Minimum closed loop retained
++A round is valid only if all three are present and linked:
++- Design doc explains what to remove/converge.
++- Round context file records input/output boundaries.
++- Diff patch captures exact changes for replay.
 +
-+1. **删减隐式流程**：把口头流程收敛到固定目录与固定文件名。
-+2. **删减命名分叉**：仅保留 `iter_round_{N}` 与 `iter_round_{N}_diff.patch` 两种命名。
-+3. **删减入口分叉**：本轮只建立一个最小闭环入口（Round 1 固化），不引入额外框架或插件。
++## 4) Explicit delete / merge / converge list
++- **Converge**: adopt `iterations/round_{N}/` as the only round workspace marker path.
++- **Converge**: adopt `docs/iter_round_{N}.md` as the only design doc naming.
++- **Converge**: adopt `iter_round_{N}_diff.patch` as the only patch naming.
++- **Delete (conceptual)**: any future ad-hoc round naming outside this schema.
 +
-+## 3) 保留的最小闭环定义
-+
-+最小闭环仅保留以下五步：
-+1. 轮次目录初始化
-+2. 设计文档落盘 (`docs/iter_round_{N}.md`)
-+3. 按设计做改动
-+4. 生成 patch (`iter_round_{N}_diff.patch`)
-+5. 输出轮次总结
-+
-+## 4) 明确删除 / 合并 / 收敛的模块 / 文件清单
-+
-+- 删除：无（首轮以流程固化为主，不进行业务代码删改）。
-+- 合并：将“命名约定 + 产物目录”统一收敛到 `iterations/round_1/`。
-+- 收敛：新增 `iterations/round_1/README.md` 作为 Round 1 最终产物索引。
-+
-+## 5) 迭代后目标结构
-+
-+```text
-+/docs
-+  iter_round_1.md
-+/iterations
-+  /round_1
-+    README.md
-+/iter_round_1_diff.patch
-+```
-diff --git a/iterations/round_1/README.md b/iterations/round_1/README.md
++## 5) Target structure after this round
++- `docs/iter_round_1.md`
++- `iterations/round_1/ROUND_CONTEXT.md`
++- `iter_round_1_diff.patch`
+diff --git a/iterations/round_1/ROUND_CONTEXT.md b/iterations/round_1/ROUND_CONTEXT.md
 new file mode 100644
-index 0000000..2083d47
+index 0000000..30991de
 --- /dev/null
-+++ b/iterations/round_1/README.md
++++ b/iterations/round_1/ROUND_CONTEXT.md
 @@ -0,0 +1,10 @@
-+# Round 1 最终产物索引
++# Round 1 Context
 +
-+本目录用于固化第 1 轮的最小闭环产物索引：
++- Input artifact: repository baseline (no prior `iter_round_*` artifacts found).
++- Working directory for this round: `iterations/round_1/`.
++- Output artifacts:
++  - Design: `docs/iter_round_1.md`
++  - Diff patch: `iter_round_1_diff.patch`
 +
-+- 设计文档：`docs/iter_round_1.md`
-+- patch：`iter_round_1_diff.patch`
-+
-+说明：
-+- Round 1 作为基线轮次，无“上一轮”可复制对象，因此以当前仓库状态作为 `N=1` 输入基线。
-+- 从 Round 2 开始，按 `round_{N-1}` 到 `round_{N}` 复制后再改动。
++## Minimal closed-loop declaration
++Round 1 only standardizes the iteration artifact contract and does not modify gameplay/runtime code.
