@@ -7,6 +7,8 @@
 
 class UAbilitySystemComponent;
 class UOTA_AttributeSet;
+class UGameplayAbility;
+class UGameplayEffect;
 
 UCLASS()
 class CARRENDERFACTORY_API AOTA_PlayerState : public APlayerState, public IAbilitySystemInterface
@@ -31,6 +33,14 @@ protected:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability")
     UOTA_AttributeSet* AttributeSet = nullptr;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability")
+    TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability")
+    TArray<TSubclassOf<UGameplayEffect>> DefaultEffects;
+
+    bool bDefaultsApplied = false;
 
     void InitializeAbilitySystem();
     void GrantDefaultAbilities();
