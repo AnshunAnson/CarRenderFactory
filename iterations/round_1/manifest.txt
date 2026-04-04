@@ -1,5 +1,0 @@
-round=1
-source_round=0
-source_commit=baseline_uncommitted
-created_at_utc=2026-04-04T00:00:00Z
-purpose=establish_minimal_convergence_loop
