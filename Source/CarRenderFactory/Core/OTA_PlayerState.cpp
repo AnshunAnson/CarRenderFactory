@@ -35,11 +35,6 @@ void AOTA_PlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 }
 
-void AOTA_PlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-}
-
 void AOTA_PlayerState::InitializeAbilitySystem()
 {
     if (ASC)

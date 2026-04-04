@@ -1,0 +1,5 @@
+Name,Stack,GoldRequired,AttackMultiplier,QiRegenMultiplier
+Stack0,0,0,1.00,1.00
+Stack1,1,50,1.05,1.10
+Stack2,2,100,1.10,1.20
+Stack3,3,150,1.15,1.30

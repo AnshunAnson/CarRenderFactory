@@ -1,0 +1,5 @@
+Name,MinQiInclusive,MaxQiInclusive,AttackMultiplier,MoveSpeedMultiplier,QiRegenMultiplier
+High,80,100,1.10,1.00,1.20
+Normal,20,79.99,1.00,1.00,1.00
+Low,0.01,19.99,0.90,0.95,1.00
+Critical,0,0,0.80,0.95,1.00
