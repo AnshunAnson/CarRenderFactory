@@ -1,123 +1,115 @@
 diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
 new file mode 100644
-index 0000000..db17145
+index 0000000..5fac16b
 --- /dev/null
 +++ b/docs/iter_round_1.md
 @@ -0,0 +1,31 @@
-+# Iteration Round 1 Design (Convergence)
++# Iteration Round 1 Design
 +
-+## 1) Current Redundancy / Coupling / Risk
-+- **No fixed, executable convergence loop**: iteration behavior only exists in prompt text, causing process drift and hidden manual state.
-+- **No standardized artifact location**: design docs and diff patches are not auto-indexed by round number, increasing traceability risk.
-+- **No isolation guard**: there is no script-level mechanism forcing round-to-round copy before edits.
++## 当前系统核心冗余 / 耦合 / 错误风险点
++1. 迭代流程仅存在于口头指令，缺少可执行入口，导致每轮执行步骤可能漂移。
++2. 轮次产物（设计文档、diff、工作目录）命名规则未固化，容易出现人工命名错误。
++3. “复制上轮产物到新目录”没有标准化脚本，容易误改原目录。
 +
-+## 2) Round-1 Reduction & Convergence Strategy
-+- Build a **single minimal script** to enforce one-round closed loop execution skeleton:
-+  1. detect previous round;
-+  2. create new round directory;
-+  3. scaffold mandatory design doc;
-+  4. generate and persist patch file by round number.
-+- Keep the implementation shell-only and dependency-light to reduce operational surface.
++## 本轮删减 & 收敛策略
++1. **删减人工步骤**：将轮次目录初始化、产物路径计算、命名规范固化到单一脚本中。
++2. **收敛入口**：统一使用 `scripts/iterative_convergence.sh` 作为唯一流程入口，避免多入口分叉。
++3. **收敛状态表达**：采用轮次目录 `iterations/round_N/` 承载每轮文档与补丁，减少隐式状态。
 +
-+## 3) Minimal Closed Loop Kept
-+- `docs/iter_round_{N}.md` exists before edits.
-+- `iterations/round_{N}/` acts as isolated round workspace for artifacts.
-+- `iter_round_{N}_diff.patch` is generated and persisted locally.
++## 保留的最小闭环定义
++最小可用闭环仅包含：
++1. 轮次目录创建；
++2. 设计文档模板落地；
++3. 基于 Git 工作区生成标准 diff 补丁；
++4. 输出下一轮建议命令。
 +
-+## 4) Explicit Delete / Merge / Converge List
-+- **Converge**: centralize iterative workflow into one script (`scripts/iter_converge.sh`).
-+- **Merge**: merge round bookkeeping into single state file (`iterations/LATEST_ROUND`).
-+- **Delete**: none in round 1 (baseline lacks safe-to-delete, low-risk targets).
++## 明确删除 / 合并 / 收敛的模块 / 文件清单
++- 新增并收敛到单入口：`scripts/iterative_convergence.sh`
++- 新增并固化本轮设计：`docs/iter_round_1.md`
++- 新增并固化本轮补丁：`iter_round_1_diff.patch`
 +
-+## 5) Post-Iteration Target Structure
-+- `docs/iter_round_1.md` (this design)
-+- `scripts/iter_converge.sh` (execution entry)
-+- `iterations/LATEST_ROUND` (round index)
-+- `iterations/round_1/` (isolated artifact directory)
-+- `iter_round_1_diff.patch` (round patch artifact)
-diff --git a/iterations/LATEST_ROUND b/iterations/LATEST_ROUND
-new file mode 100644
-index 0000000..d00491f
---- /dev/null
-+++ b/iterations/LATEST_ROUND
-@@ -0,0 +1 @@
-+1
++> 本轮未执行业务代码删除，优先先收敛流程入口，避免对现有 Unreal 工程产生非必要风险。
++
++## 迭代后目标结构
++- `docs/iter_round_1.md`：本轮第一性原理设计依据
++- `scripts/iterative_convergence.sh`：轮次迭代统一入口
++- `iterations/round_1/`：可回溯目录（工作副本与元数据）
++- `iter_round_1_diff.patch`：本轮统一 diff 产物
 diff --git a/iterations/round_1/README.md b/iterations/round_1/README.md
 new file mode 100644
-index 0000000..d19f07c
+index 0000000..aa338fd
 --- /dev/null
 +++ b/iterations/round_1/README.md
-@@ -0,0 +1,5 @@
+@@ -0,0 +1,6 @@
 +# Round 1 Artifacts
 +
-+- Design: docs/iter_round_1.md
-+- Patch: iter_round_1_diff.patch
-+- Goal: establish minimal convergence loop executor.
-diff --git a/scripts/iter_converge.sh b/scripts/iter_converge.sh
++- Source baseline: working tree before Round 1 changes.
++- Design doc: `docs/iter_round_1.md`
++- Patch artifact: `iter_round_1_diff.patch`
++- Repro command for local snapshot: `./scripts/iterative_convergence.sh 1`
+diff --git a/scripts/iterative_convergence.sh b/scripts/iterative_convergence.sh
 new file mode 100755
-index 0000000..e7a9399
+index 0000000..037ad3b
 --- /dev/null
-+++ b/scripts/iter_converge.sh
-@@ -0,0 +1,62 @@
++++ b/scripts/iterative_convergence.sh
+@@ -0,0 +1,60 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 +
 +ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-+ITER_DIR="$ROOT_DIR/iterations"
-+DOCS_DIR="$ROOT_DIR/docs"
++cd "$ROOT_DIR"
 +
-+mkdir -p "$ITER_DIR" "$DOCS_DIR"
-+
-+LATEST_FILE="$ITER_DIR/LATEST_ROUND"
-+if [[ -f "$LATEST_FILE" ]]; then
-+  LAST_ROUND="$(cat "$LATEST_FILE")"
-+else
-+  LAST_ROUND=0
-+fi
-+
-+if ! [[ "$LAST_ROUND" =~ ^[0-9]+$ ]]; then
-+  echo "Invalid round index in $LATEST_FILE: $LAST_ROUND" >&2
++round="${1:-1}"
++if ! [[ "$round" =~ ^[0-9]+$ ]]; then
++  echo "Round must be an integer, got: $round" >&2
 +  exit 1
 +fi
 +
-+NEXT_ROUND=$((LAST_ROUND + 1))
-+ROUND_DIR="$ITER_DIR/round_${NEXT_ROUND}"
-+mkdir -p "$ROUND_DIR"
++round_dir="iterations/round_${round}"
++mkdir -p "$round_dir"
 +
-+DESIGN_DOC="$DOCS_DIR/iter_round_${NEXT_ROUND}.md"
-+if [[ ! -f "$DESIGN_DOC" ]]; then
-+  cat > "$DESIGN_DOC" <<DOC
-+# Iteration Round ${NEXT_ROUND} Design
++snapshot_dir="$round_dir/workdir_snapshot"
++mkdir -p "$snapshot_dir"
 +
-+## Current Redundancy / Coupling / Risk
++# 复制当前工程（排除版本库元数据和轮次产物目录本身，避免递归）
++rsync -a --delete \
++  --exclude '.git' \
++  --exclude 'iterations' \
++  --exclude 'Saved' \
++  --exclude 'Intermediate' \
++  ./ "$snapshot_dir/"
++
++# 为本轮生成一个设计文档模板（若不存在）
++doc_path="docs/iter_round_${round}.md"
++if [[ ! -f "$doc_path" ]]; then
++  cat > "$doc_path" <<DOC
++# Iteration Round ${round} Design
++
++## 当前系统核心冗余 / 耦合 / 错误风险点
 +- TODO
 +
-+## Reduction & Convergence Strategy
++## 本轮删减 & 收敛策略
 +- TODO
 +
-+## Minimal Closed Loop
++## 保留的最小闭环定义
 +- TODO
 +
-+## Delete / Merge / Converge List
++## 明确删除 / 合并 / 收敛的模块 / 文件清单
 +- TODO
 +
-+## Target Structure
++## 迭代后目标结构
 +- TODO
 +DOC
 +fi
 +
-+PATCH_FILE="$ROOT_DIR/iter_round_${NEXT_ROUND}_diff.patch"
-+# Patch is generated against current working tree; untracked files are listed in round metadata.
-+git -C "$ROOT_DIR" diff > "$PATCH_FILE"
++patch_path="iter_round_${round}_diff.patch"
++git diff -- . ":(exclude)$patch_path" > "$patch_path"
 +
-+echo "$NEXT_ROUND" > "$LATEST_FILE"
++cat <<MSG
++[iterative-convergence] round=${round}
++- snapshot: ${snapshot_dir}
++- design:   ${doc_path}
++- diff:     ${patch_path}
 +
-+cat > "$ROUND_DIR/README.md" <<META
-+# Round ${NEXT_ROUND} Artifacts
-+
-+- Design: docs/iter_round_${NEXT_ROUND}.md
-+- Patch: iter_round_${NEXT_ROUND}_diff.patch
-+- Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-+META
-+
-+echo "Initialized convergence round ${NEXT_ROUND}."
++Next: implement changes strictly from ${doc_path}, then regenerate ${patch_path}.
++MSG
