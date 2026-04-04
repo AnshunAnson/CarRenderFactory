@@ -1,9 +1,11 @@
 #include "OTA_GameMode.h"
 #include "OTA_PlayerController.h"
 #include "OTA_PlayerState.h"
+#include "Core/OTA_AttributeSet.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "GameFramework/GameStateBase.h"
+#include "Algo/Sort.h"
 
 AOTA_GameMode::AOTA_GameMode()
 {
@@ -41,6 +43,8 @@ void AOTA_GameMode::Logout(AController* Exiting)
     }
 
     Super::Logout(Exiting);
+
+    CheckMatchEndConditions();
 }
 
 void AOTA_GameMode::StartMatch()
@@ -98,4 +102,47 @@ void AOTA_GameMode::OnMatchComplete()
 
 void AOTA_GameMode::CheckMatchEndConditions()
 {
+    if (!bMatchInProgress)
+    {
+        return;
+    }
+
+    if (ConnectedPlayers.Num() <= 1)
+    {
+        EndMatch();
+    }
+}
+
+float AOTA_GameMode::CalculatePlayerScore(APlayerState* PlayerState) const
+{
+    if (!PlayerState)
+    {
+        return 0.0f;
+    }
+
+    const AOTA_PlayerState* OTAPlayerState = Cast<AOTA_PlayerState>(PlayerState);
+    if (!OTAPlayerState || !OTAPlayerState->GetAttributeSet())
+    {
+        return 0.0f;
+    }
+
+    const UOTA_AttributeSet* Attr = OTAPlayerState->GetAttributeSet();
+    return Attr->GetKillCount() * KillScoreWeight + Attr->GetGold() * GoldScoreWeight;
+}
+
+TArray<APlayerState*> AOTA_GameMode::GetSortedLeaderboard() const
+{
+    TArray<APlayerState*> Result;
+    if (!GameState)
+    {
+        return Result;
+    }
+
+    Result = GameState->PlayerArray;
+    Algo::Sort(Result, [this](APlayerState* Lhs, APlayerState* Rhs)
+    {
+        return CalculatePlayerScore(Lhs) > CalculatePlayerScore(Rhs);
+    });
+
+    return Result;
 }
