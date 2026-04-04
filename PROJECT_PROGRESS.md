@@ -58,6 +58,7 @@
   - `TP_FirstPersonGameMode`、`HorrorGameMode` 构造逻辑改为显式声明“由蓝图提供具体 Pawn/Controller”
   - `ShooterCharacter::PlayFiringMontage` 已实现第一/第三人称动画蒙太奇播放
   - 修复 `ShooterCharacter` 武器第三人称挂点使用错误（从第一人称 Socket 改为第三人称 Socket）
+  - 补充 `CarRenderFactory.Build.cs` 的 `TP_FirstPerson` 相关 PublicIncludePaths，修复部分环境下模板头文件无法解析（如 `TP_FirstPersonCharacter.h`）的问题
 
 ---
 
