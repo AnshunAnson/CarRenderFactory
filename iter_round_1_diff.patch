@@ -1,0 +1,109 @@
+diff --git a/docs/iter_round_1.md b/docs/iter_round_1.md
+new file mode 100644
+index 0000000..f321a4d
+--- /dev/null
++++ b/docs/iter_round_1.md
+@@ -0,0 +1,35 @@
++# Iteration Round 1 Design (N=1)
++
++## 1) 当前系统核心冗余 / 耦合 / 错误风险点
++
++1. 迭代流程只存在于口头要求中，没有落地为可执行最小流程，导致每轮执行方式不一致。
++2. 缺少固定产物路径约定（工作目录、设计文档、diff），容易产生隐式状态和遗漏。
++3. 手工执行“复制上一轮产物 → 修改 → 导出补丁”步骤时，路径分叉多，易操作失误。
++
++## 2) 本轮删减 & 收敛策略
++
++1. **删减隐式流程**：将迭代流程收敛为单一脚本入口，避免多命令分叉。
++2. **收敛产物结构**：统一使用 `tools/convergence/workdirs/iter_round_{N}` 存放每轮隔离副本。
++3. **固化最小闭环**：脚本只做四件事：
++   - 创建新轮次隔离目录
++   - 复制上一轮产物（若存在）
++   - 生成本轮设计文档骨架
++   - 生成本轮 diff 补丁文件
++
++## 3) 保留的最小闭环定义
++
++最小闭环 = `准备隔离目录` + `设计文档` + `实施改动` + `导出diff`。
++
++本轮仅实现闭环框架，不引入额外业务逻辑。
++
++## 4) 明确删除 / 合并 / 收敛清单
++
++- 删除：无代码删除（本轮先消除“流程隐式化”）。
++- 合并：将分散的手工步骤合并到 `tools/convergence/new_round.sh`。
++- 收敛：统一迭代工作目录与产物命名规范。
++
++## 5) 迭代后目标结构
++
++- `docs/iter_round_1.md`：本轮设计文档。
++- `tools/convergence/new_round.sh`：统一创建下一轮的最小流程脚本。
++- `iter_round_1_diff.patch`：本轮与上一轮的统一 diff 补丁。
+diff --git a/tools/convergence/new_round.sh b/tools/convergence/new_round.sh
+new file mode 100755
+index 0000000..003fa45
+--- /dev/null
++++ b/tools/convergence/new_round.sh
+@@ -0,0 +1,62 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
++WORKDIR_ROOT="$ROOT_DIR/tools/convergence/workdirs"
++
++if [[ $# -ne 1 ]]; then
++  echo "Usage: $0 <round_number>"
++  exit 1
++fi
++
++ROUND="$1"
++if ! [[ "$ROUND" =~ ^[0-9]+$ ]]; then
++  echo "round_number must be a positive integer"
++  exit 1
++fi
++
++PREV_ROUND=$((ROUND - 1))
++CUR_DIR="$WORKDIR_ROOT/iter_round_${ROUND}"
++PREV_DIR="$WORKDIR_ROOT/iter_round_${PREV_ROUND}"
++
++mkdir -p "$WORKDIR_ROOT"
++rm -rf "$CUR_DIR"
++mkdir -p "$CUR_DIR"
++
++if [[ "$ROUND" -gt 1 && -d "$PREV_DIR" ]]; then
++  cp -a "$PREV_DIR/." "$CUR_DIR/"
++fi
++
++DOC_PATH="$ROOT_DIR/docs/iter_round_${ROUND}.md"
++if [[ ! -f "$DOC_PATH" ]]; then
++  cat > "$DOC_PATH" <<DOC
++# Iteration Round ${ROUND} Design (N=${ROUND})
++
++## 1) 当前系统核心冗余 / 耦合 / 错误风险点
++- 待分析
++
++## 2) 本轮删减 & 收敛策略
++- 待定义
++
++## 3) 保留的最小闭环定义
++- 待定义
++
++## 4) 明确删除 / 合并 / 收敛清单
++- 待定义
++
++## 5) 迭代后目标结构
++- 待定义
++DOC
++fi
++
++PATCH_PATH="$ROOT_DIR/iter_round_${ROUND}_diff.patch"
++if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
++  git -C "$ROOT_DIR" diff -- . ":(exclude)iter_round_${ROUND}_diff.patch" > "$PATCH_PATH" || true
++else
++  : > "$PATCH_PATH"
++fi
++
++echo "Round ${ROUND} prepared."
++echo "Workdir: $CUR_DIR"
++echo "Design:  $DOC_PATH"
++echo "Patch:   $PATCH_PATH"
