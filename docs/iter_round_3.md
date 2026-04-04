@@ -1,5 +1,8 @@
 # Iteration Round 3 Design (Execution Convergence)
 
+> 状态：**历史归档（冻结）**
+> 说明：本文件仅保留 Round 3 决策上下文；当前流程规则请以 `docs/convergence_workflow.md` 为准。
+
 ## 1) 当前系统核心冗余 / 耦合 / 错误风险点
 - 收敛脚本入口分散（`scripts/` 与 `tools/` 并存），新一轮执行者难以判断“哪个是权威入口”。
 - 轮次状态同时存在 `iterations/LATEST_ROUND` 与 `iterations/state/current_round.txt` 两套标记，存在漂移风险。

@@ -2,6 +2,7 @@
 
 > 目标：先把 **FPS射击 + 近战博弈 + 对战 + 武器 + 背包 + 联机** 的工程框架固定下来，确保后续实现不跑偏。
 > 执行细分版：见 `docs/project_architecture_breakdown.md`（模块边界 / 依赖方向 / 迁移里程碑）。
+> 文档导航：见 `docs/README.md`。
 
 ---
 

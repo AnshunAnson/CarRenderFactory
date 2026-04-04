@@ -1,5 +1,7 @@
 # Convergence Workflow（统一收敛流程）
 
+> 相关导航：`docs/README.md`
+
 ## 目标
 
 提供一个可重复、可审计、低耦合的迭代收敛流程，避免轮次状态和产物分散。
@@ -48,5 +50,5 @@ scripts/iter_converge.sh
 
 ## 维护建议
 
-- 每轮结束后在 `PROJECT_PROGRESS.md` 记录“本轮目标 / 执行结果 / 待验证项”。
-- 在 UE 环境可用时补充可运行证据（UBT 编译结果、PIE 截图、回归清单）。
+- 进度记录统一写入：`PROJECT_PROGRESS.md`。
+- 文档入口与职责边界统一查看：`docs/README.md`。
