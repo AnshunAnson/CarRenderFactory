@@ -140,42 +140,67 @@ public class CarRenderFactory : ModuleRules
 			"EnhancedInput",
 
 			// --------------------------------------------------------
-			// USD 模块依赖
+			// Gameplay Ability System (GAS) - 核心战斗系统
 			// --------------------------------------------------------
-			// UnrealUSDWrapper - USD 核心 API 封装
-			// - UE::FUsdStage: Stage 操作封装
-			// - USD 类型转换工具
-			"UnrealUSDWrapper",
+			// GameplayAbilities - 能力系统核心
+			// - UAbilitySystemComponent (ASC)
+			// - UGameplayAbility - 能力基类
+			// - UGameplayEffect - 效果系统
+			// - UAttributeSet - 属性集
+			// - 能力激活、冷却、消耗
+			"GameplayAbilities",
 
-			// USDClasses - USD 类定义
-			// - AUsdStageActor: Stage Actor 基类
-			// - UUsdInfoCache: Prim 信息缓存
-			"USDClasses",
+			// GameplayTags - 游戏标签系统
+			// - FGameplayTag - 标签定义
+			// - FGameplayTagContainer - 标签容器
+			// - 标签查询和匹配
+			// - 状态、类型、事件标记
+			"GameplayTags",
 
-			// USDStage - USD Stage Actor 相关
-			// - UUsdPrimTwin: Prim 双生对象
-			"USDStage",
+			// GameplayTasks - 游戏任务系统
+			// - UGameplayTask - 任务基类
+			// - 异步能力任务
+			// - 能力等待和延迟
+			"GameplayTasks",
 
-			// USD Schemas - USD Schema 定义
-			// - USD Schema Translators
-			// - 材质、网格转换器
-			"USDSchemas",
+			// --------------------------------------------------------
+			// 网络模块
+			// --------------------------------------------------------
+			// Networking - 网络基础
+			// - 网络连接管理
+			// - RPC 支持
+			"Networking",
 
-			// AssetRegistry - 资产注册
-			// - 资产查找和枚举
-			"AssetRegistry"
-		});
+			// Sockets - Socket 通信
+			// - 底层网络通信
+			// - P2P 连接支持
+			"Sockets",
 
-		// ============================================================
-		// 插件模块依赖
-		// ============================================================
-		// UsdCarAssemblyValidator - USD 汽车装配验证器插件
-		// - FUsdStageParser: USD Stage 解析器
-		// - FUsdPrimInfo, FUsdStageData 等 USD 数据结构
-		PrivateDependencyModuleNames.AddRange(new string[] {
-			"UsdCarAssemblyValidator",
-			"Slate",
-			"SlateCore",
+			// --------------------------------------------------------
+			// 物理模块
+			// --------------------------------------------------------
+			// PhysicsCore - 物理核心
+			// - 碰撞检测
+			// - 物理查询
+			"PhysicsCore",
+
+			// Chaos - Chaos 物理引擎
+			// - 高级物理模拟
+			// - 物理交互
+			"Chaos",
+
+			// --------------------------------------------------------
+			// AI 模块 (用于战斗 AI)
+			// --------------------------------------------------------
+			// AIModule - AI 系统
+			// - AI 控制器
+			// - 行为树
+			"AIModule",
+
+			// NavigationSystem - 导航系统
+			// - 寻路
+			// - 导航网格
+			"NavigationSystem"
 		});
 
 		// ============================================================
@@ -186,9 +211,20 @@ public class CarRenderFactory : ModuleRules
 		// - 仅在此模块的 .cpp 文件中可访问
 		// - 依赖不会传递给依赖此模块的其他模块
 		// - 适合实现细节依赖，不暴露给外部
-		//
-		// 当前为空，可按需添加
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			// Slate UI 框架
+			"Slate",
+			"SlateCore",
+
+			// Niagara 特效系统
+			"Niagara",
+
+			// 音频系统
+			"AudioMixer",
+
+			// 调试工具
+			"GameplayDebugger"
+		});
 
 		// ============================================================
 		// Slate UI 依赖 (可选)

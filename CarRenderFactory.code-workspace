@@ -4,7 +4,7 @@
 			"path": "."
 		},
 		{
-			"path": "../../UE_5.7/Engine/Source"
+			"path": "../../UE_5.7"
 		}
 	],
 	"settings": {}
