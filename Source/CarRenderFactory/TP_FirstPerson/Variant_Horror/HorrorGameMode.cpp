@@ -5,5 +5,7 @@
 
 AHorrorGameMode::AHorrorGameMode()
 {
-	// stub
+	// Horror variant relies on Blueprint-authored classes for concrete pawn/controller/UI composition.
+	DefaultPawnClass = nullptr;
+	bStartPlayersAsSpectators = false;
 }

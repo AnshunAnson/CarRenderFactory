@@ -4,5 +4,7 @@
 
 ATP_FirstPersonGameMode::ATP_FirstPersonGameMode()
 {
-	// stub
+	// Template GameMode keeps C++ side minimal and expects Blueprint to provide concrete pawn/controller classes.
+	DefaultPawnClass = nullptr;
+	bStartPlayersAsSpectators = false;
 }
