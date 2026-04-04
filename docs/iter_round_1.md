@@ -1,37 +1,29 @@
-# Iteration Round 1 Design (Convergence-First)
+# Iteration Round 1 Design
 
-## 1) Current Redundancy / Coupling / Error-Risk Points
-- The repo has no single executable workflow for “design-first iterative convergence”, so execution relies on manual memory and ad-hoc commands.
-- Round artifacts (design + diff + workspace snapshot path) are not normalized, which increases state branching risk across rounds.
-- There is no deterministic round number allocation; conflicting filenames can silently overwrite prior outputs.
+## 1) 当前系统核心冗余 / 耦合 / 错误风险点
+- **流程隐式化**：当前仓库没有“迭代轮次设计文档 + 可复用补丁产物”的固定位置与命名约定，导致执行时依赖口头规则，易偏离。
+- **产物不可追溯**：缺少按轮次固化的 diff 补丁文件，后续轮次无法稳定复用“上一轮最终产物”。
+- **收敛目标未显式**：没有单独文档记录“删除优先、最小闭环、降错”原则与本轮具体删减策略，容易扩展过度。
 
-## 2) This Round's Reduction & Convergence Strategy
-- Introduce **one** minimal script to orchestrate a single round lifecycle:
-  1. Allocate round number automatically.
-  2. Clone previous round workspace into a new isolated workspace directory.
-  3. Enforce design-doc-first creation.
-  4. Export unified diff patch for this round.
-- Avoid introducing plugin/framework dependencies; shell + git only.
-- Keep output contract fixed and small to reduce ambiguity.
+## 2) 本轮删减 & 收敛策略
+- **删减隐式流程**：将迭代规则从“临时执行逻辑”收敛为固定文档产物，减少执行分叉。
+- **收敛产物集合**：本轮只新增一个设计文档与一个补丁文件，不引入新模块、不改业务代码。
+- **错误面控制**：避免触碰运行时代码路径，先固化流程资产，确保下一轮可在低风险基础上持续收敛。
 
-## 3) Preserved Minimum Closed Loop
-Minimum loop retained after this round:
-1. Read previous round output.
-2. Create current round design doc.
-3. Apply modifications in isolated round workspace.
-4. Generate `iter_round_{N}_diff.patch`.
-5. Emit summary instructions for next round handoff.
+## 3) 保留的最小闭环定义
+最小闭环仅包含：
+1. `docs/iter_round_1.md`（本轮设计依据）
+2. `iter_round_1_diff.patch`（本轮与上一状态的统一 diff）
 
-## 4) Explicit Delete / Merge / Converge List
-- **Converge**: scattered manual iteration steps → `scripts/iter_converge.sh` single entrypoint.
-- **Delete by replacement**: implicit round naming and manual patch naming conventions.
-- **Not expanded**: no multi-tool orchestration layer, no custom metadata DB, no daemon loop (avoids over-engineering).
+满足“可设计 -> 可执行 -> 可比对 -> 可复用”的最小流程。
 
-## 5) Target Structure After Iteration
-- `docs/iter_round_1.md` (this design, as traceable baseline)
-- `scripts/iter_converge.sh` (single-round deterministic executor)
-- `iterative_artifacts/round_{N}/...` (runtime-generated, local artifacts)
+## 4) 明确删除 / 合并 / 收敛的模块 / 文件清单
+- 删除：无（首轮不直接删业务代码，优先收敛执行流程与追溯能力）。
+- 合并：无。
+- 收敛：将迭代执行依据收敛到 `docs/iter_round_1.md`，将变更收敛到 `iter_round_1_diff.patch`。
 
-## 6) Round 1 Completion Notes
-- Added script-based deterministic round scaffolding.
-- Kept loop execution intentionally single-round per invocation to avoid runaway side effects in non-interactive environments while preserving infinite continuation capability via repeated invocation.
+## 5) 迭代后目标结构
+- `docs/iter_round_1.md`
+- `iter_round_1_diff.patch`
+
+下一轮（Round 2）将以本轮两个文件作为“上一轮最终产物”输入，继续执行删减优先与降错收敛。
