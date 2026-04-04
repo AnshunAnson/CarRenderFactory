@@ -34,6 +34,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Game")
     float GetMatchTimeRemaining() const;
 
+    UFUNCTION(BlueprintPure, Category = "Game")
+    float CalculatePlayerScore(APlayerState* PlayerState) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Game")
+    TArray<APlayerState*> GetSortedLeaderboard() const;
+
 protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game")
     int32 MaxPlayers = 4;
