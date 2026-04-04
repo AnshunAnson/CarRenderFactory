@@ -183,7 +183,13 @@ public class CarRenderFactory : ModuleRules
 			// StateTreeModule - 状态树系统 (UE5.4+)
 			// - UStateTreeAIComponent
 			// - 状态机 AI
-			"StateTreeModule"
+			"StateTreeModule",
+
+			// GameplayStateTreeModule - 游戏玩法状态树
+			// - UStateTreeAIComponent (AI专用组件)
+			// - UStateTreeComponent
+			// - AI相关状态树任务
+			"GameplayStateTreeModule"
 		});
 
 		// ============================================================
