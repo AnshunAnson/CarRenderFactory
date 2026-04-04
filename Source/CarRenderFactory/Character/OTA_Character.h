@@ -92,6 +92,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Attributes")
     void SetQiRegenMultiplier(float NewMultiplier);
 
+<<<<<<< HEAD
     UFUNCTION(BlueprintCallable, Category = "Attributes")
     void SetQiStateAttackMultiplier(float NewMultiplier);
 
@@ -104,6 +105,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Attributes")
     void SetGoldRegenMultiplier(float NewMultiplier);
 
+=======
+>>>>>>> main
     UFUNCTION(BlueprintPure, Category = "Attributes")
     float GetQiRegenMultiplier() const { return QiRegenMultiplier; }
 
@@ -137,7 +140,10 @@ protected:
 
     void EndQiShield();
     void EndTreasureSense();
+<<<<<<< HEAD
     void RefreshFinalMultipliers();
+=======
+>>>>>>> main
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skills")
     float SkillSharedCooldown = 8.0f;
@@ -177,10 +183,13 @@ protected:
 
     float QiRegenMultiplier = 1.0f;
     float BaseWalkSpeed = 600.0f;
+<<<<<<< HEAD
     float QiStateAttackMultiplier = 1.0f;
     float GoldAttackMultiplier = 1.0f;
     float QiStateRegenMultiplier = 1.0f;
     float GoldRegenMultiplier = 1.0f;
+=======
+>>>>>>> main
     float SkillCooldownEndTime = 0.0f;
     bool bQiShieldActive = false;
     bool bTreasureSenseActive = false;

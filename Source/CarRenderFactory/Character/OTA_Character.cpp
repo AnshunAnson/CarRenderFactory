@@ -120,11 +120,16 @@ void AOTA_Character::ApplyDamage(float Damage, AActor* DamageInstigator)
 
         if (AOTA_Character* KillerCharacter = Cast<AOTA_Character>(DamageInstigator))
         {
+<<<<<<< HEAD
             if (KillerCharacter->AttributeSet)
             {
                 const float NewKillCount = KillerCharacter->AttributeSet->GetKillCount() + 1.0f;
                 KillerCharacter->AttributeSet->SetKillCount(NewKillCount);
             }
+=======
+            const float NewKillCount = KillerCharacter->AttributeSet->GetKillCount() + 1.0f;
+            KillerCharacter->AttributeSet->SetKillCount(NewKillCount);
+>>>>>>> main
         }
     }
 }
@@ -155,8 +160,13 @@ void AOTA_Character::ModifyGold(int32 Delta)
     const float AttackMultiplierFromGold = 1.0f + GoldStacks * GoldBuffAttackPerStack;
     const float QiRegenMultiplierFromGold = 1.0f + GoldStacks * GoldBuffQiRegenPerStack;
 
+<<<<<<< HEAD
     SetGoldAttackMultiplier(AttackMultiplierFromGold);
     SetGoldRegenMultiplier(QiRegenMultiplierFromGold);
+=======
+    SetAttackPowerMultiplier(AttackMultiplierFromGold);
+    SetQiRegenMultiplier(QiRegenMultiplierFromGold);
+>>>>>>> main
 }
 
 float AOTA_Character::GetQi() const
@@ -242,7 +252,14 @@ bool AOTA_Character::IsSkillOnCooldown() const
 
 void AOTA_Character::SetAttackPowerMultiplier(float NewMultiplier)
 {
+<<<<<<< HEAD
     SetQiStateAttackMultiplier(NewMultiplier);
+=======
+    if (AttributeSet)
+    {
+        AttributeSet->SetAttackPowerMultiplier(FMath::Max(0.1f, NewMultiplier));
+    }
+>>>>>>> main
 }
 
 void AOTA_Character::SetMoveSpeedMultiplier(float NewMultiplier)
@@ -261,6 +278,7 @@ void AOTA_Character::SetMoveSpeedMultiplier(float NewMultiplier)
 
 void AOTA_Character::SetQiRegenMultiplier(float NewMultiplier)
 {
+<<<<<<< HEAD
     SetQiStateRegenMultiplier(NewMultiplier);
 }
 
@@ -296,6 +314,9 @@ void AOTA_Character::RefreshFinalMultipliers()
     }
 
     QiRegenMultiplier = QiStateRegenMultiplier * GoldRegenMultiplier;
+=======
+    QiRegenMultiplier = FMath::Max(0.1f, NewMultiplier);
+>>>>>>> main
 }
 
 void AOTA_Character::EndQiShield()
@@ -306,6 +327,24 @@ void AOTA_Character::EndQiShield()
 void AOTA_Character::EndTreasureSense()
 {
     bTreasureSenseActive = false;
+<<<<<<< HEAD
+=======
+}
+
+float AOTA_Character::GetQi() const
+{
+    return AttributeSet ? AttributeSet->GetQi() : 0.0f;
+}
+
+float AOTA_Character::GetHealth() const
+{
+    return AttributeSet ? AttributeSet->GetHealth() : 0.0f;
+}
+
+int32 AOTA_Character::GetGold() const
+{
+    return AttributeSet ? static_cast<int32>(AttributeSet->GetGold()) : 0;
+>>>>>>> main
 }
 
 void AOTA_Character::OnRep_CurrentMeleeType(EMeleeType OldType)
