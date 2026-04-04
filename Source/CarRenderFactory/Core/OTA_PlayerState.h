@@ -19,6 +19,7 @@ public:
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
     virtual void BeginPlay() override;
+    virtual void Reset() override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UFUNCTION(BlueprintPure, Category = "Ability")
