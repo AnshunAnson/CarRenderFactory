@@ -180,9 +180,7 @@ public class CarRenderFactory : ModuleRules
 			// - 导航网格
 			"NavigationSystem",
 
-			// --------------------------------------------------------
 			// StateTreeModule - 状态树系统 (UE5.4+)
-			// --------------------------------------------------------
 			// - UStateTreeAIComponent
 			// - 状态机 AI
 			"StateTreeModule"
