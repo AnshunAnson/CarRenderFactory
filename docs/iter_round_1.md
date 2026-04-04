@@ -1,39 +1,30 @@
-# Iteration Round 1 设计文档
+# Iteration Round 1 Design (Convergence First)
 
-## 1) 当前系统核心冗余 / 耦合 / 错误风险点
-- 缺少标准化的“收敛迭代”文档入口，导致后续删减与合并动作难以追踪，易出现口头策略与实际改动偏离。
-- 缺少轮次化产物固化（设计文档 + 差异补丁）机制，迭代可回溯性不足，错误定位面偏大。
-- 当前仓库未提供“最小闭环收敛流程”的显式定义，容易在后续迭代中引入设计外改动。
+## 1) Current Redundancy / Coupling / Risk Points
+- `build_log.txt` is a generated, time-variant artifact checked into version control. It does not participate in Unreal build runtime logic, but creates noise and stale context risk.
+- The repository has no fixed round-level convergence ledger, so iterative changes are harder to trace and replay.
+- There is no explicit minimal-closed-loop definition for this convergence process in-repo, which increases process drift risk.
 
-## 2) 本轮删减 & 收敛策略
-- **删除优先**：本轮不新增运行时代码，不扩展功能点，仅清理“流程不确定性”。
-- **收敛优先**：把迭代输入/输出固定为两类核心产物：
-  1. `docs/iter_round_N.md`（设计约束）
-  2. `iter_round_N_diff.patch`（实现差异）
-- **最小改动面**：仅改动文档与迭代产物目录，不触碰 UE 运行代码与配置，降低引入编译/行为回归风险。
+## 2) Round-1 Reduction & Convergence Strategy
+- Delete non-essential generated artifact (`build_log.txt`) to shrink stale surface and reduce accidental dependency on logs.
+- Add a single round artifact manifest under `iterations/round_1/` as the isolated working output anchor.
+- Keep changes documentation-only + repository hygiene to avoid broad behavioral changes in this first closure step.
 
-## 3) 保留的最小闭环定义
-最小闭环 = “可重复执行的一轮收敛迭代”
-1. 读取上轮产物（或首轮基线）。
-2. 先写本轮设计文档。
-3. 严格按设计执行最小改动。
-4. 生成并保存本轮 diff 补丁。
-5. 输出删减依据与降错说明。
+## 3) Minimal Closed Loop Kept
+- Core loop preserved: source code + config + deterministic docs only.
+- Iteration contract preserved through:
+  1. design doc (`docs/iter_round_1.md`),
+  2. isolated round manifest (`iterations/round_1/manifest.md`),
+  3. reusable diff patch (`iter_round_1_diff.patch`).
 
-## 4) 明确删除 / 合并 / 收敛的模块 / 文件清单
-- 删除：无（首轮以流程硬化为主，避免误删业务资产）。
-- 合并：无（首轮不做跨模块合并，先建立固定迭代骨架）。
-- 收敛：
-  - 新增 `docs/iter_round_1.md` 作为本轮唯一设计源。
-  - 新增 `iterations/round_1/README.md` 记录隔离工作目录基线语义。
-  - 生成 `iter_round_1_diff.patch` 固化本轮差异。
+## 4) Explicit Delete / Merge / Converge List
+- **Delete**: `build_log.txt`.
+- **Add**: `iterations/round_1/manifest.md`.
+- **Add**: `docs/iter_round_1.md` (this design doc).
 
-## 5) 迭代后目标结构
-- `docs/iter_round_1.md`：本轮设计与执行约束。
-- `iterations/round_1/README.md`：首轮隔离副本说明。
-- `iter_round_1_diff.patch`：首轮统一 diff 补丁。
-
-## 6) 执行边界（防设计外改动）
-- 禁止修改 `Source/` 下任何 C++ 文件。
-- 禁止修改 `Config/` 下任何配置。
-- 禁止引入新依赖、脚本或构建步骤。
+## 5) Target Structure After Iteration
+- Remove volatile generated log from VCS tracked set.
+- Add stable iteration artifacts:
+  - `docs/iter_round_1.md`
+  - `iterations/round_1/manifest.md`
+  - `iter_round_1_diff.patch`
