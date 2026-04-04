@@ -1,7 +1,7 @@
 #include "OTA_GameMode.h"
 #include "OTA_PlayerController.h"
 #include "OTA_PlayerState.h"
-#include "OTA_AttributeSet.h"
+#include "Core/OTA_AttributeSet.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "GameFramework/GameStateBase.h"

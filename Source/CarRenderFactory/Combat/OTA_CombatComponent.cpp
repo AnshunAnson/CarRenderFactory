@@ -1,5 +1,5 @@
 #include "OTA_CombatComponent.h"
-#include "OTA_Character.h"
+#include "Character/OTA_Character.h"
 #include "DrawDebugHelpers.h"
 
 UOTA_CombatComponent::UOTA_CombatComponent()

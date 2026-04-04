@@ -1,11 +1,12 @@
 #include "OTA_Character.h"
 #include "AbilitySystemComponent.h"
-#include "OTA_AttributeSet.h"
-#include "OTA_CombatComponent.h"
-#include "OTA_QiComponent.h"
+#include "Core/OTA_AttributeSet.h"
+#include "Combat/OTA_CombatComponent.h"
+#include "Core/OTA_QiComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/PlayerState.h"
 
 AOTA_Character::AOTA_Character()
 {
@@ -51,7 +52,7 @@ void AOTA_Character::OnRep_PlayerState()
 
     if (ASC)
     {
-        ASC->InitAbilityActorInfo(Cast<AActor>(GetPlayerState()), this);
+        ASC->InitAbilityActorInfo(GetPlayerState(), this);
     }
 }
 
@@ -313,17 +314,4 @@ void AOTA_Character::OnRep_CurrentMeleeType(EMeleeType OldType)
 
 void AOTA_Character::OnRep_CombatState(ECombatState OldState)
 {
-}
-
-void AOTA_Character::InitializeAbilitySystem()
-{
-    if (ASC)
-    {
-        ASC->InitAbilityActorInfo(this, this);
-    }
-}
-
-void AOTA_Character::OnDeath()
-{
-    SetCombatState(ECombatState::Dead);
 }

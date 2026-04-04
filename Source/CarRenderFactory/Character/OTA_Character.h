@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
-#include "OTA_CombatTypes.h"
+#include "Combat/OTA_CombatTypes.h"
 #include "OTA_Character.generated.h"
 
 class UAbilitySystemComponent;
@@ -132,7 +132,6 @@ protected:
     UFUNCTION()
     void OnRep_CombatState(ECombatState OldState);
 
-    void InitializeAbilitySystem();
     void OnDeath();
 
     void EndQiShield();
