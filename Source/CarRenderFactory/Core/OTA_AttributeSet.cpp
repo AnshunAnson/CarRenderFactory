@@ -1,6 +1,6 @@
 #include "OTA_AttributeSet.h"
 #include "Net/UnrealNetwork.h"
-#include "GameplayEffect.h"
+#include "GameplayEffectExtension.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Character/OTA_Character.h"
 #include "Combat/OTA_CombatTypes.h"
